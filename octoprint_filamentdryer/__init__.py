@@ -81,4 +81,4 @@ class TemperatureControllerPlugin(octoprint.plugin.StartupPlugin,
             dict(type="settings", custom_bindings=False, template="filamentdryer_settings.jinja2")
         ]
 
-__plugin_pythoncompat__ = ">=2.7,<4"
+__plugin_pythoncompat__ = ">=3,<4"
