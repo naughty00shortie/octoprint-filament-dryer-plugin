@@ -4,7 +4,7 @@ plugin_package = "octoprint_filamentdryer"
 
 plugin_name = "Filament Dryer Controller"
 
-plugin_version = "0.1.5"
+plugin_version = "0.1.6"
 
 plugin_description = """A plugin to monitor and control temperature using a DHT22 sensor and GPIO"""
 
