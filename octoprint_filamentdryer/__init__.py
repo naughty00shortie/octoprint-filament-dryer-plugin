@@ -8,7 +8,8 @@ import time
 class TemperatureControllerPlugin(octoprint.plugin.StartupPlugin,
                                   octoprint.plugin.TemplatePlugin,
                                   octoprint.plugin.AssetPlugin,
-                                  octoprint.plugin.SimpleApiPlugin):
+                                  octoprint.plugin.SimpleApiPlugin,
+                                  octoprint.plugin.SettingsPlugin):
 
     FAN_PIN = 17
     HEATER_PIN = 27
@@ -68,3 +69,14 @@ class TemperatureControllerPlugin(octoprint.plugin.StartupPlugin,
         lgpio.gpio_write(self.h, self.FAN_PIN, 0)
         lgpio.gpio_write(self.h, self.HEATER_PIN, 0)
         lgpio.gpiochip_close(self.h)
+
+    def get_settings_defaults(self):
+        return {
+            "target_temp": 70,
+            "fan_always_on": True
+        }
+
+    def get_template_configs(self):
+        return [
+            dict(type="settings", custom_bindings=False, template="filamentdryer_settings.jinja2")
+        ]
