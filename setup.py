@@ -22,7 +22,7 @@ plugin_requires = [
     "adafruit-circuitpython-dht"
 ]
 
-additional_setup_parameters = {"python_requires": ">=3,<4"}
+additional_setup_parameters = {"python_requires": ">=3.7,<4"}
 
 plugin_additional_data = []
 
