@@ -5,7 +5,7 @@ import lgpio
 import atexit
 import octoprint.plugin
 
-class TemperatureControlPlugin(octoprint.plugin.OctoPrintPlugin):
+class FilamentDryerPlugin(octoprint.plugin.OctoPrintPlugin):
     def __init__(self):
         self.dht_device = adafruit_dht.DHT22(board.D4)
         self.h = lgpio.gpiochip_open(0)
@@ -85,6 +85,12 @@ class TemperatureControlPlugin(octoprint.plugin.OctoPrintPlugin):
             dict(type="settings", custom_bindings=False, template="filamentdryer_settings.jinja2")
         ]
 
-__plugin_implementation__ = TemperatureControlPlugin()
-__plugin_pythoncompat__ = ">=3.7,<4"
+__plugin_name__ = "Filament Dryer"
+__plugin_pythoncompat__ = ">=2.7,<4"
+
+
+def __plugin_load__():
+    global __plugin_implementation__
+    __plugin_implementation__ = FilamentDryerPlugin()
+
 

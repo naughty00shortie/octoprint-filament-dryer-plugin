@@ -53,8 +53,7 @@ setup_parameters = octoprint_setuptools.create_plugin_setup_parameters(
     requires=plugin_requires,
     additional_packages=plugin_addtional_packages,
     ignored_packages=plugin_ignored_packages,
-    additional_data=plugin_additional_data,
-    python_requires='>=3.7,<4'
+    additional_data=plugin_additional_data
 )
 
 if len(additional_setup_parameters):
