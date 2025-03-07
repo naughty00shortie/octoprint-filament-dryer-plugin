@@ -17,7 +17,11 @@ setup(
     author_email=PLUGIN_AUTHOR_EMAIL,
     url=PLUGIN_URL,
     packages=[PLUGIN_PACKAGE],
-    install_requires=["OctoPrint"],
+    install_requires=[
+        "OctoPrint",
+        "lgpio",
+        "adafruit-circuitpython-dht"
+    ],
     entry_points={
         "octoprint.plugin": [
             f"{PLUGIN_IDENTIFIER} = {PLUGIN_PACKAGE}"
