@@ -22,13 +22,13 @@ plugin_requires = [
     "adafruit-circuitpython-dht"
 ]
 
+additional_setup_parameters = {"python_requires": ">=3,<4"}
+
 plugin_additional_data = []
 
 plugin_addtional_packages = []
 
 plugin_ignored_packages = []
-
-additional_setup_parameters = {}
 
 from setuptools import setup
 
