@@ -86,4 +86,4 @@ class TemperatureControlPlugin(octoprint.plugin.OctoPrintPlugin):
         ]
 
 __plugin_implementation__ = TemperatureControlPlugin()
-
+__plugin_pythoncompat__ = ">=3,<4"
