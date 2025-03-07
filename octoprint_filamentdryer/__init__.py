@@ -1,74 +1,78 @@
-import octoprint.plugin
-import lgpio
+import time
 import adafruit_dht
 import board
-import threading
-import time
+import lgpio
+import atexit
+import octoprint.plugin
 
-class TemperatureControllerPlugin(octoprint.plugin.StartupPlugin,
-                                  octoprint.plugin.TemplatePlugin,
-                                  octoprint.plugin.AssetPlugin,
-                                  octoprint.plugin.SimpleApiPlugin,
-                                  octoprint.plugin.SettingsPlugin):
-
-    FAN_PIN = 17
-    HEATER_PIN = 27
-    TARGET_TEMP = 70.0
-    TOLERANCE = 1.5
-    RUNNING = True
-
-    def on_after_startup(self):
+class TemperatureControlPlugin(octoprint.plugin.OctoPrintPlugin):
+    def __init__(self):
         self.dht_device = adafruit_dht.DHT22(board.D4)
         self.h = lgpio.gpiochip_open(0)
-        lgpio.gpio_claim_output(self.h, self.FAN_PIN)
-        lgpio.gpio_claim_output(self.h, self.HEATER_PIN)
-        lgpio.gpio_write(self.h, self.FAN_PIN, 1)  # Fan always on
+        self.fan_pin = 17
+        self.heater_pin = 27
+        self.target_temp = 65.0
+        self.tolerance = 1.0
 
-        self._logger.info("TemperatureController Plugin Started")
+        lgpio.gpio_claim_output(self.h, self.fan_pin)
+        lgpio.gpio_claim_output(self.h, self.heater_pin)
+        lgpio.gpio_write(self.h, self.fan_pin, 1)
 
-        self.temp_thread = threading.Thread(target=self.monitor_temperature, daemon=True)
-        self.temp_thread.start()
+    def cleanup(self):
+        if self.h:
+            lgpio.gpio_write(self.h, self.fan_pin, 0)
+            lgpio.gpio_write(self.h, self.heater_pin, 0)
+            lgpio.gpiochip_close(self.h)
 
-    def monitor_temperature(self):
-        while self.RUNNING:
-            try:
-                temperature_c = self.dht_device.temperature
-                humidity = self.dht_device.humidity
+    def on_after_startup(self):
+        # Called after the plugin is fully loaded
+        self._logger.info("Temperature Control Plugin started")
+        atexit.register(self.cleanup)
 
-                if temperature_c is not None and humidity is not None:
-                    self._logger.info(f"Temp: {temperature_c:.1f} C, Humidity: {humidity}%")
-
-                    if temperature_c < (self.TARGET_TEMP - self.TOLERANCE):
-                        lgpio.gpio_write(self.h, self.HEATER_PIN, 1)
-                    elif temperature_c > (self.TARGET_TEMP + self.TOLERANCE):
-                        lgpio.gpio_write(self.h, self.HEATER_PIN, 0)
-
-            except RuntimeError:
-                pass  # Ignore DHT22 read errors
-
-            time.sleep(5)
-
-    def get_api_commands(self):
-        return {
-            "get_temp": [],
-            "set_target_temp": ["temp"]
-        }
-
-    def on_api_command(self, command, data):
-        if command == "get_temp":
+    def check_temperature(self):
+        try:
             temperature_c = self.dht_device.temperature
             humidity = self.dht_device.humidity
-            return {"temperature": temperature_c, "humidity": humidity}
 
-        elif command == "set_target_temp":
-            self.TARGET_TEMP = float(data.get("temp", 70.0))
-            return {"status": "Target temperature updated"}
+            if temperature_c is not None and humidity is not None:
+                self._logger.info(f"Temp: {temperature_c:.1f} C    Humidity: {humidity}%")
 
-    def on_shutdown(self):
-        self.RUNNING = False
-        lgpio.gpio_write(self.h, self.FAN_PIN, 0)
-        lgpio.gpio_write(self.h, self.HEATER_PIN, 0)
-        lgpio.gpiochip_close(self.h)
+                # Control the heater based on the target temperature
+                if temperature_c < (self.target_temp - self.tolerance):
+                    lgpio.gpio_write(self.h, self.heater_pin, 1)  # Turn heater on
+                elif temperature_c > (self.target_temp + self.tolerance):
+                    lgpio.gpio_write(self.h, self.heater_pin, 0)  # Turn heater off
+        except RuntimeError as err:
+            if "Checksum did not validate" in str(err):
+                self._logger.warning("DHT22 checksum error, retrying...")
+            else:
+                self._logger.error(f"Sensor error: {err}")
+
+    def run_temperature_check(self):
+        while True:
+            self.check_temperature()
+            time.sleep(2.0)
+
+    def get_update_information(self):
+        return dict(
+            displayName="Temperature Control Plugin",
+            version=self._plugin_version,
+            updateUrl="https://github.com/octoprint/plugins/temperature-control-plugin/releases/latest"
+        )
+    def on_settings_save(self, data):
+        self.target_temp = data.get("target_temperature", 65.0)
+        self.tolerance = data.get("tolerance", 1.0)
+        self._logger.info(f"Settings saved: Target Temp={self.target_temp}, Tolerance={self.tolerance}")
+
+    def get_update_information(self):
+        return dict(
+            displayName="Temperature Control Plugin",
+            version=self._plugin_version,
+            updateUrl="https://github.com/octoprint/plugins/temperature-control-plugin/releases/latest"
+        )
+
+    def set_heater_state(self, state):
+        lgpio.gpio_write(self.h, self.heater_pin, state)
 
     def get_settings_defaults(self):
         return {
@@ -81,4 +85,5 @@ class TemperatureControllerPlugin(octoprint.plugin.StartupPlugin,
             dict(type="settings", custom_bindings=False, template="filamentdryer_settings.jinja2")
         ]
 
-__plugin_pythoncompat__ = ">=3,<4"
+__plugin_implementation__ = TemperatureControlPlugin()
+
