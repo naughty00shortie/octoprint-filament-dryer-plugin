@@ -1,0 +1,38 @@
+<div id="temp_control">
+    <h3>Temperature & Humidity</h3>
+    <p>Temp: <span id="temp_value">Loading...</span> °C</p>
+    <p>Humidity: <span id="humidity_value">Loading...</span>%</p>
+
+    <h3>Target Temperature</h3>
+    <input type="number" id="target_temp" value="70" step="0.5">
+    <button id="set_target_temp">Set</button>
+</div>
+
+<script>
+    $(function() {
+        function updateTemp() {
+            $.ajax({
+                url: "/api/plugin/TemperatureController",
+                type: "POST",
+                data: JSON.stringify({"command": "get_temp"}),
+                contentType: "application/json",
+                success: function(response) {
+                    $("#temp_value").text(response.temperature);
+                    $("#humidity_value").text(response.humidity);
+                }
+            });
+        }
+
+        $("#set_target_temp").click(function() {
+            var newTemp = $("#target_temp").val();
+            $.ajax({
+                url: "/api/plugin/TemperatureController",
+                type: "POST",
+                data: JSON.stringify({"command": "set_target_temp", "temp": newTemp}),
+                contentType: "application/json"
+            });
+        });
+
+        setInterval(updateTemp, 5000);
+    });
+</script>
