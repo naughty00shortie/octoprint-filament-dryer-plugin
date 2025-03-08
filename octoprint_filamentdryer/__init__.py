@@ -2,7 +2,6 @@ import octoprint.plugin
 import subprocess
 import threading
 import time
-from flask import jsonify, request
 
 class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
                           octoprint.plugin.TemplatePlugin,

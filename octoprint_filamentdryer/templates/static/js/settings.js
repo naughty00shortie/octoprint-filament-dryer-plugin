@@ -65,6 +65,6 @@ $(function() {
     OCTOPRINT_VIEWMODELS.push({
         construct: FilamentDryerViewModel,
         dependencies: ["settingsViewModel"],
-        elements: ["#settings_plugin_filamentdryer"]
+        elements: ["#settings_filamentdryer"]
     });
 });
