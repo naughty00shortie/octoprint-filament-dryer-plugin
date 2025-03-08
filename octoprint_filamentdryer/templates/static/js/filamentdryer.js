@@ -6,33 +6,20 @@ $(function() {
         self.dryerOn = ko.observable(false);
 
         self.toggleDryer = function() {
-            if (self.dryerOn()) {
-                $.ajax({
-                    url: API_BASEURL + "plugin/filamentdryer",
-                    type: "POST",
-                    data: JSON.stringify({ command: "stop" }),
-                    contentType: "application/json",
-                    success: function() {
-                        self.dryerOn(false);
-                    },
-                    error: function() {
-                        alert('Failed to turn off the dryer.');
-                    }
-                });
-            } else {
-                $.ajax({
-                    url: API_BASEURL + "plugin/filamentdryer",
-                    type: "POST",
-                    data: JSON.stringify({ command: "start" }),
-                    contentType: "application/json",
-                    success: function() {
-                        self.dryerOn(true);
-                    },
-                    error: function() {
-                        alert('Failed to turn on the dryer.');
-                    }
-                });
-            }
+            var command = self.dryerOn() ? "stop" : "start";
+
+            $.ajax({
+                url: API_BASEURL + "plugin/filamentdryer",
+                type: "POST",
+                data: JSON.stringify({ command: command }),
+                contentType: "application/json",
+                success: function() {
+                    self.dryerOn(!self.dryerOn());
+                },
+                error: function() {
+                    alert("Failed to toggle the dryer.");
+                }
+            });
         };
     }
 
