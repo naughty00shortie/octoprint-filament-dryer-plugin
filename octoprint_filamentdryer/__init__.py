@@ -10,7 +10,7 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
 
     def __init__(self):
         self.monitor_thread = None
-        self.running = False  # Controls whether the system is running
+        self.running = False
 
     def get_settings_defaults(self):
         return {
@@ -84,7 +84,19 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             self.stop_monitoring()
 
     def get_template_configs(self):
-        return [{"type": "settings", "custom_bindings": True}]
+        return [
+            {"type": "settings", "custom_bindings": True},
+            {"type": "navbar", "custom_bindings": True}
+        ]
+
+    def get_api(self):
+        return {
+            "plugin/filamentdryer": {
+                "method": "POST",
+                "commands": ["start", "stop"],
+                "callback": self.on_api_command
+            }
+        }
 
 __plugin_name__ = "Filament Dryer"
 __plugin_pythoncompat__ = ">=2.7,<4"

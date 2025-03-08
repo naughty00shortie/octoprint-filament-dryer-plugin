@@ -14,6 +14,9 @@ $(function() {
                     contentType: "application/json",
                     success: function() {
                         self.dryerOn(false);
+                    },
+                    error: function() {
+                        alert('Failed to turn off the dryer.');
                     }
                 });
             } else {
@@ -24,6 +27,9 @@ $(function() {
                     contentType: "application/json",
                     success: function() {
                         self.dryerOn(true);
+                    },
+                    error: function() {
+                        alert('Failed to turn on the dryer.');
                     }
                 });
             }
