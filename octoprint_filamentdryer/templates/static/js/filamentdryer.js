@@ -13,11 +13,13 @@ $(function() {
                 type: "POST",
                 data: JSON.stringify({ command: command }),
                 contentType: "application/json",
-                success: function() {
+                success: function(response) {
+                    console.log("Dryer toggled:", response);
                     self.dryerOn(!self.dryerOn());
                 },
-                error: function() {
-                    alert("Failed to toggle the dryer.");
+                error: function(xhr, status, error) {
+                    console.error("Failed to toggle the dryer:", error);
+                    alert("Failed to toggle the dryer. Check OctoPrint logs.");
                 }
             });
         };

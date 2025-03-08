@@ -1,7 +1,8 @@
 import octoprint.plugin
+import subprocess
 import threading
 import time
-import subprocess
+from flask import jsonify, request
 
 class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
                           octoprint.plugin.TemplatePlugin,
@@ -19,18 +20,18 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             "fan_on_cmd": "pinctrl set 17 op dh",
             "fan_off_cmd": "pinctrl set 17 op dl",
             "element_on_cmd": "pinctrl set 27 op dh",
-            "element_off_cmd": "pinctrl set 27 op dl",
+            "element_off_cmd": "pinctrl set 27 op dl"
         }
-    
+
     def execute_command(self, command):
         if command:
-            self._logger.info(f"Executing command: {command}")
-            subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._logger.info(f"Executing: {command}")
+            result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._logger.info(f"Output: {result.stdout.decode().strip()}, Error: {result.stderr.decode().strip()}")
 
     def start_monitoring(self):
         if self.monitor_thread and self.monitor_thread.is_alive():
             return
-
         self.running = True
         self.monitor_thread = threading.Thread(target=self.monitor_temperature, daemon=True)
         self.monitor_thread.start()
@@ -56,9 +57,9 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
                         element_off_cmd = self._settings.get(["element_off_cmd"])
 
                         if temperature_c < (target_temp - tolerance):
-                            subprocess.run(element_on_cmd, shell=True)
+                            self.execute_command(element_on_cmd)
                         elif temperature_c > (target_temp + tolerance):
-                            subprocess.run(element_off_cmd, shell=True)
+                            self.execute_command(element_off_cmd)
 
                     time.sleep(2)
 
@@ -82,10 +83,10 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
         fan_off_cmd = self._settings.get(["fan_off_cmd"])
 
         if command == "start":
-            subprocess.run(fan_on_cmd, shell=True)
+            self.execute_command(fan_on_cmd)
             self.start_monitoring()
         elif command == "stop":
-            subprocess.run(fan_off_cmd, shell=True)
+            self.execute_command(fan_off_cmd)
             self.stop_monitoring()
 
     def get_template_configs(self):
@@ -93,20 +94,3 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             {"type": "settings", "custom_bindings": True},
             {"type": "navbar", "custom_bindings": True}
         ]
-
-    def get_api(self):
-        return {
-            "plugin/filamentdryer": {
-                "method": "POST",
-                "commands": ["start", "stop"],
-                "callback": self.on_api_command
-            }
-        }
-
-__plugin_name__ = "Filament Dryer"
-__plugin_pythoncompat__ = ">=2.7,<4"
-
-
-def __plugin_load__():
-    global __plugin_implementation__
-    __plugin_implementation__ = FilamentDryerPlugin()
