@@ -1,29 +1,40 @@
 $(function() {
-    function updateSettings() {
-        var targetTemperature = $('#targetTemperature').val();
-        var tolerance = $('#tolerance').val();
+    function FilamentDryerViewModel(parameters) {
+        var self = this;
 
-        // Make sure the values are valid numbers
-        if (!isNaN(targetTemperature) && !isNaN(tolerance)) {
-            // Send the updated settings to the plugin
-            OctoPrint.plugins.temperature_control.setSettings(targetTemperature, tolerance);
-        } else {
-            alert("Invalid input. Please enter valid numeric values.");
-        }
+        self.settings = parameters[0];
+
+        self.target_temp = ko.observable();
+        self.tolerance = ko.observable();
+        self.fan_on_cmd = ko.observable();
+        self.fan_off_cmd = ko.observable();
+        self.element_on_cmd = ko.observable();
+        self.element_off_cmd = ko.observable();
+
+        self.onBeforeBinding = function() {
+            self.target_temp(self.settings.settings.plugins.filamentdryer.target_temp());
+            self.tolerance(self.settings.settings.plugins.filamentdryer.tolerance());
+            self.fan_on_cmd(self.settings.settings.plugins.filamentdryer.fan_on_cmd());
+            self.fan_off_cmd(self.settings.settings.plugins.filamentdryer.fan_off_cmd());
+            self.element_on_cmd(self.settings.settings.plugins.filamentdryer.element_on_cmd());
+            self.element_off_cmd(self.settings.settings.plugins.filamentdryer.element_off_cmd());
+        };
+
+        self.saveSettings = function() {
+            self.settings.settings.plugins.filamentdryer.target_temp(self.target_temp());
+            self.settings.settings.plugins.filamentdryer.tolerance(self.tolerance());
+            self.settings.settings.plugins.filamentdryer.fan_on_cmd(self.fan_on_cmd());
+            self.settings.settings.plugins.filamentdryer.fan_off_cmd(self.fan_off_cmd());
+            self.settings.settings.plugins.filamentdryer.element_on_cmd(self.element_on_cmd());
+            self.settings.settings.plugins.filamentdryer.element_off_cmd(self.element_off_cmd());
+
+            self.settings.saveData();
+        };
     }
 
-    // When the settings are saved, apply the values from the input fields
-    function loadSettings(settings) {
-        $('#targetTemperature').val(settings.target_temperature);
-        $('#tolerance').val(settings.tolerance);
-    }
-
-    // Bind the save button click event
-    $('#saveSettings').click(updateSettings);
-
-    // Listen to the settings being loaded into the UI
-    OctoPrint.settings.onSettingsLoaded(function() {
-        var settings = OctoPrint.settings.plugins.temperature_control;
-        loadSettings(settings);
+    OCTOPRINT_VIEWMODELS.push({
+        construct: FilamentDryerViewModel,
+        dependencies: ["settingsViewModel"],
+        elements: ["#settings_plugin_filamentdryer"]
     });
 });

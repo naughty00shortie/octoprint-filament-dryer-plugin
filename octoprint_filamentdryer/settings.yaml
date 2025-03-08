@@ -1,2 +1,8 @@
-target_temperature: 65.0
-tolerance: 1.0
+plugins:
+  filamentdryer:
+    target_temp: 65.0
+    tolerance: 1.0
+    fan_on_cmd: "echo 'Fan ON'"
+    fan_off_cmd: "echo 'Fan OFF'"
+    element_on_cmd: "echo 'Element ON'"
+    element_off_cmd: "echo 'Element OFF'"
