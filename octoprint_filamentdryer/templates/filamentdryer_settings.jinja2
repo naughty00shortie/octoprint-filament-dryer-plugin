@@ -1,26 +1,53 @@
-<!-- filamentdryer_settings.jinja2 -->
-<div class="row-fluid">
-    <div class="span12">
-        <h3>Filament Dryer Settings</h3>
+<div id="settings_plugin_filamentdryer" class="tab-pane">
+    <h2>Filament Dryer Controller</h2>
 
-        <form class="form-horizontal">
-            <div class="control-group">
-                <label class="control-label" for="temperature">Target Temperature (°C)</label>
-                <div class="controls">
-                    <input type="number" id="temperature" data-bind="value: settings.plugins.filamentdryer.target_temp">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <label class="control-label" for="fan_control">Fan Always On?</label>
-                <div class="controls">
-                    <input type="checkbox" id="fan_control" data-bind="checked: settings.plugins.filamentdryer.fan_always_on">
-                </div>
-            </div>
-
-            <div class="form-actions">
-                <button class="btn btn-primary" data-bind="click: function() { self.saveData() }">Save</button>
-            </div>
-        </form>
+    <div class="control-group">
+        <label for="target_temp" class="control-label">Target Temperature (°C)</label>
+        <div class="controls">
+            <input type="number" id="target_temp" data-bind="value: target_temp" class="input-small">
+        </div>
     </div>
+
+    <div class="control-group">
+        <label for="tolerance" class="control-label">Temperature Tolerance (°C)</label>
+        <div class="controls">
+            <input type="number" id="tolerance" data-bind="value: tolerance" class="input-small">
+        </div>
+    </div>
+
+    <hr>
+
+    <h3>Custom GPIO Commands</h3>
+
+    <div class="control-group">
+        <label for="fan_on_cmd" class="control-label">Fan ON Command</label>
+        <div class="controls">
+            <input type="text" id="fan_on_cmd" data-bind="value: fan_on_cmd" class="input-xxlarge">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label for="fan_off_cmd" class="control-label">Fan OFF Command</label>
+        <div class="controls">
+            <input type="text" id="fan_off_cmd" data-bind="value: fan_off_cmd" class="input-xxlarge">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label for="element_on_cmd" class="control-label">Heater ON Command</label>
+        <div class="controls">
+            <input type="text" id="element_on_cmd" data-bind="value: element_on_cmd" class="input-xxlarge">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label for="element_off_cmd" class="control-label">Heater OFF Command</label>
+        <div class="controls">
+            <input type="text" id="element_off_cmd" data-bind="value: element_off_cmd" class="input-xxlarge">
+        </div>
+    </div>
+
+    <hr>
+
+    <button class="btn btn-primary" data-bind="click: saveSettings">Save</button>
 </div>
