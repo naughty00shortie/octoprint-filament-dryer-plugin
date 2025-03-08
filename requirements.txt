@@ -1,3 +1,2 @@
 OctoPrint
-lgpio
 adafruit-circuitpython-dht

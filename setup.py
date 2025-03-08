@@ -4,7 +4,7 @@ plugin_package = "octoprint_filamentdryer"
 
 plugin_name = "Filament Dryer Controller"
 
-plugin_version = "0.1.6"
+plugin_version = "0.1.7"
 
 plugin_description = """A plugin to monitor and control temperature using a DHT22 sensor and GPIO"""
 
@@ -18,7 +18,6 @@ plugin_license = "GPL-3.0"
 
 plugin_requires = [
     "OctoPrint",
-    "lgpio",
     "adafruit-circuitpython-dht"
 ]
 
