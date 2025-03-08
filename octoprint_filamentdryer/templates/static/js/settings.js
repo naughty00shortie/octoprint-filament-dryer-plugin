@@ -1,5 +1,5 @@
 $(function() {
-    function FilamentDryerViewModel(parameters) {
+    function FilamentDryerSettingsViewModel(parameters) {
         var self = this;
         self.settings = parameters[0];
 
@@ -10,7 +10,7 @@ $(function() {
         self.element_on_cmd = ko.observable();
         self.element_off_cmd = ko.observable();
 
-        self.onBeforeBinding = function() {
+        self.onSettingsShown = function() {
             self.target_temp(self.settings.settings.plugins.filamentdryer.target_temp());
             self.tolerance(self.settings.settings.plugins.filamentdryer.tolerance());
             self.fan_on_cmd(self.settings.settings.plugins.filamentdryer.fan_on_cmd());
@@ -19,7 +19,6 @@ $(function() {
             self.element_off_cmd(self.settings.settings.plugins.filamentdryer.element_off_cmd());
         };
 
-        // Save settings
         self.onSettingsBeforeSave = function() {
             self.settings.settings.plugins.filamentdryer.target_temp(self.target_temp());
             self.settings.settings.plugins.filamentdryer.tolerance(self.tolerance());
@@ -31,7 +30,7 @@ $(function() {
     }
 
     OCTOPRINT_VIEWMODELS.push({
-        construct: FilamentDryerViewModel,
+        construct: FilamentDryerSettingsViewModel,
         dependencies: ["settingsViewModel"],
         elements: ["#settings_plugin_filamentdryer"]
     });

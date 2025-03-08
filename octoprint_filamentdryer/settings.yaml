@@ -1,8 +1,0 @@
-plugins:
-  filamentdryer:
-    target_temp: 65.0
-    tolerance: 1.0
-    fan_on_cmd: "pinctrl set 17 op dh"
-    fan_off_cmd: "pinctrl set 17 op dl"
-    element_on_cmd: "pinctrl set 27 op dh"
-    element_off_cmd: "pinctrl set 27 op dl"
