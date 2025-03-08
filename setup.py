@@ -23,7 +23,7 @@ plugin_requires = [
 
 additional_setup_parameters = {"python_requires": ">=3.7,<4"}
 
-plugin_additional_data = []
+plugin_additional_data = ["static", "templates"]
 
 plugin_addtional_packages = []
 
