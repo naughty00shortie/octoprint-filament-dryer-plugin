@@ -3,6 +3,7 @@ $(function() {
         var self = this;
 
         self.settings = parameters[0];
+        self.isSystemOn = ko.observable(false);
 
         self.target_temp = ko.observable();
         self.tolerance = ko.observable();
@@ -30,7 +31,36 @@ $(function() {
 
             self.settings.saveData();
         };
+
+        self.toggleSystem = function() {
+            self.isSystemOn(!self.isSystemOn());
+
+            $.ajax({
+                url: "/api/plugin/filamentdryer",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ action: self.isSystemOn() ? "start" : "stop" }),
+                success: function(response) {
+                    console.log("System " + (self.isSystemOn() ? "ON" : "OFF"));
+                }
+            });
+        };
     }
+
+    $(document).ready(function() {
+        $("#navbar").append(
+            '<li id="filamentdryer-button">' +
+            '<a href="#" id="filamentdryer-toggle">' +
+            '<i class="fas fa-fire"></i>' +
+            '</a>' +
+            '</li>'
+        );
+
+        $("#filamentdryer-toggle").click(function() {
+            var viewModel = ko.dataFor(this);
+            viewModel.toggleSystem();
+        });
+    });
 
     OCTOPRINT_VIEWMODELS.push({
         construct: FilamentDryerViewModel,

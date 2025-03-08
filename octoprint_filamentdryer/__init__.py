@@ -75,6 +75,38 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             dict(type="settings", custom_bindings=False, template="filamentdryer_settings.jinja2")
         ]
 
+    def get_settings_defaults(self):
+        return {
+            "target_temp": 65.0,
+            "tolerance": 1.0,
+            "fan_on_cmd": "pinctrl set 17 out 1",
+            "fan_off_cmd": "pinctrl set 17 out 0",
+            "element_on_cmd": "pinctrl set 27 out 1",
+            "element_off_cmd": "pinctrl set 27 out 0",
+        }
+
+    def get_api_commands(self):
+        return {
+            "start": [],
+            "stop": []
+        }
+
+    def on_api_command(self, command, data):
+        fan_on_cmd = self._settings.get(["fan_on_cmd"])
+        fan_off_cmd = self._settings.get(["fan_off_cmd"])
+        element_on_cmd = self._settings.get(["element_on_cmd"])
+        element_off_cmd = self._settings.get(["element_off_cmd"])
+
+        if command == "start":
+            subprocess.run(fan_on_cmd, shell=True)
+            subprocess.run(element_on_cmd, shell=True)
+        elif command == "stop":
+            subprocess.run(fan_off_cmd, shell=True)
+            subprocess.run(element_off_cmd, shell=True)
+
+    def get_template_configs(self):
+        return [{"type": "settings", "custom_bindings": True}]
+
 __plugin_name__ = "Filament Dryer"
 __plugin_pythoncompat__ = ">=2.7,<4"
 
