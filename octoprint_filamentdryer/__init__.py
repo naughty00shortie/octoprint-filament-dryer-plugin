@@ -21,6 +21,11 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             "element_on_cmd": "pinctrl set 27 op dh",
             "element_off_cmd": "pinctrl set 27 op dl",
         }
+    
+    def execute_command(self, command):
+        if command:
+            self._logger.info(f"Executing command: {command}")
+            subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def start_monitoring(self):
         if self.monitor_thread and self.monitor_thread.is_alive():
