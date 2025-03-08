@@ -1,80 +1,16 @@
-import time
-import adafruit_dht
-import board
-import subprocess
-import atexit
 import octoprint.plugin
+import threading
+import time
+import subprocess
 
 class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
-                          octoprint.plugin.SettingsPlugin,
                           octoprint.plugin.TemplatePlugin,
+                          octoprint.plugin.SettingsPlugin,
                           octoprint.plugin.SimpleApiPlugin):
 
-    def get_settings_defaults(self):
-        return {
-            "target_temp": 65.0,
-            "tolerance": 1.0,
-            "fan_on_cmd": "echo 'Fan ON'",
-            "fan_off_cmd": "echo 'Fan OFF'",
-            "element_on_cmd": "echo 'Element ON'",
-            "element_off_cmd": "echo 'Element OFF'"
-        }
-
-    def run_command(self, command):
-        if command:
-            try:
-                subprocess.run(command, shell=True, check=True)
-            except subprocess.CalledProcessError as e:
-                self._logger.error(f"Command failed: {command}, Error: {e}")
-
-    def cleanup(self):
-        self.run_command(self._settings.get(["fan_off_cmd"]))
-        self.run_command(self._settings.get(["element_off_cmd"]))
-
-    def monitor_temperature(self):
-        dht_device = adafruit_dht.DHT22(board.D4)
-        atexit.register(self.cleanup)
-
-        self.run_command(self._settings.get(["fan_on_cmd"]))
-
-        try:
-            while True:
-                try:
-                    temperature_c = dht_device.temperature
-                    humidity = dht_device.humidity
-
-                    if temperature_c is not None and humidity is not None:
-                        print(f"Temp: {temperature_c:.1f} C    Humidity: {humidity}%")
-
-                        target_temp = float(self._settings.get(["target_temp"]))
-                        tolerance = float(self._settings.get(["tolerance"]))
-
-                        if temperature_c < (target_temp - tolerance):
-                            self.run_command(self._settings.get(["element_on_cmd"]))
-                        elif temperature_c > (target_temp + tolerance):
-                            self.run_command(self._settings.get(["element_off_cmd"]))
-
-                except RuntimeError as err:
-                    if "Checksum did not validate" in str(err):
-                        print("Warning: DHT22 checksum error, retrying...")
-                    else:
-                        print("Sensor error:", err)
-
-                time.sleep(2.0)
-
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.cleanup()
-
-    def on_after_startup(self):
-        self._logger.info("Starting Filament Dryer Monitor...")
-        self.monitor_temperature()
-
-    def get_template_configs(self):
-        return [
-            dict(type="settings", custom_bindings=False, template="filamentdryer_settings.jinja2")
-        ]
+    def __init__(self):
+        self.monitor_thread = None
+        self.running = False  # Controls whether the system is running
 
     def get_settings_defaults(self):
         return {
@@ -86,6 +22,50 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             "element_off_cmd": "pinctrl set 27 op dl",
         }
 
+    def start_monitoring(self):
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            return
+
+        self.running = True
+        self.monitor_thread = threading.Thread(target=self.monitor_temperature, daemon=True)
+        self.monitor_thread.start()
+
+    def stop_monitoring(self):
+        self.running = False
+        if self.monitor_thread:
+            self.monitor_thread.join()
+
+    def monitor_temperature(self):
+        try:
+            import adafruit_dht
+            import board
+            dht_device = adafruit_dht.DHT22(board.D4)
+
+            while self.running:
+                try:
+                    temperature_c = dht_device.temperature
+                    if temperature_c is not None:
+                        target_temp = self._settings.get_float(["target_temp"])
+                        tolerance = self._settings.get_float(["tolerance"])
+                        element_on_cmd = self._settings.get(["element_on_cmd"])
+                        element_off_cmd = self._settings.get(["element_off_cmd"])
+
+                        if temperature_c < (target_temp - tolerance):
+                            subprocess.run(element_on_cmd, shell=True)
+                        elif temperature_c > (target_temp + tolerance):
+                            subprocess.run(element_off_cmd, shell=True)
+
+                    time.sleep(2)
+
+                except RuntimeError as e:
+                    if "Checksum did not validate" in str(e):
+                        self._logger.warning("DHT22 checksum error, retrying...")
+                    else:
+                        self._logger.error(f"DHT22 sensor error: {e}")
+
+        except Exception as e:
+            self._logger.error(f"Error in monitoring thread: {e}")
+
     def get_api_commands(self):
         return {
             "start": [],
@@ -95,15 +75,13 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
     def on_api_command(self, command, data):
         fan_on_cmd = self._settings.get(["fan_on_cmd"])
         fan_off_cmd = self._settings.get(["fan_off_cmd"])
-        element_on_cmd = self._settings.get(["element_on_cmd"])
-        element_off_cmd = self._settings.get(["element_off_cmd"])
 
         if command == "start":
             subprocess.run(fan_on_cmd, shell=True)
-            subprocess.run(element_on_cmd, shell=True)
+            self.start_monitoring()
         elif command == "stop":
             subprocess.run(fan_off_cmd, shell=True)
-            subprocess.run(element_off_cmd, shell=True)
+            self.stop_monitoring()
 
     def get_template_configs(self):
         return [{"type": "settings", "custom_bindings": True}]
