@@ -1,2 +1,3 @@
 OctoPrint
 adafruit-circuitpython-dht
+python-periphery
