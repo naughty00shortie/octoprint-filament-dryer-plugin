@@ -7,7 +7,8 @@ import octoprint.plugin
 
 class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
                           octoprint.plugin.SettingsPlugin,
-                          octoprint.plugin.TemplatePlugin):
+                          octoprint.plugin.TemplatePlugin,
+                          octoprint.plugin.SimpleApiPlugin):
 
     def get_settings_defaults(self):
         return {
@@ -79,10 +80,10 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
         return {
             "target_temp": 65.0,
             "tolerance": 1.0,
-            "fan_on_cmd": "pinctrl set 17 out 1",
-            "fan_off_cmd": "pinctrl set 17 out 0",
-            "element_on_cmd": "pinctrl set 27 out 1",
-            "element_off_cmd": "pinctrl set 27 out 0",
+            "fan_on_cmd": "pinctrl set 17 op dh",
+            "fan_off_cmd": "pinctrl set 17 op dl",
+            "element_on_cmd": "pinctrl set 27 op dh",
+            "element_off_cmd": "pinctrl set 27 op dl",
         }
 
     def get_api_commands(self):
@@ -114,5 +115,3 @@ __plugin_pythoncompat__ = ">=2.7,<4"
 def __plugin_load__():
     global __plugin_implementation__
     __plugin_implementation__ = FilamentDryerPlugin()
-
-
