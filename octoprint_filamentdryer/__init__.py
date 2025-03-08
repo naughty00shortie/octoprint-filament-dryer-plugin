@@ -13,14 +13,14 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
         self.running = False
 
     def get_settings_defaults(self):
-        return {
-            "target_temp": 65.0,
-            "tolerance": 1.0,
-            "fan_on_cmd": "pinctrl set 17 op dh",
-            "fan_off_cmd": "pinctrl set 17 op dl",
-            "element_on_cmd": "pinctrl set 27 op dh",
-            "element_off_cmd": "pinctrl set 27 op dl"
-        }
+        return dict(
+            target_temp = 65.0,
+            tolerance = 1.0,
+            fan_on_cmd = "pinctrl set 17 op dh",
+            fan_off_cmd = "pinctrl set 17 op dl",
+            element_on_cmd = "pinctrl set 27 op dh",
+            element_off_cmd = "pinctrl set 27 op dl"
+    )
 
     def execute_command(self, command):
         if command:
@@ -93,3 +93,31 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             {"type": "settings", "custom_bindings": True},
             {"type": "navbar", "custom_bindings": True}
         ]
+
+    def get_permissions(self):
+        return [
+            {
+                "role": "SETTINGS_READ",
+                "permissions": ["PLUGIN_FILAMENTDRYER_VIEW"],
+                "description": "Allows reading filament dryer settings",
+                "default_groups": ["user", "admin"]
+            },
+            {
+                "role": "SETTINGS_WRITE",
+                "permissions": ["PLUGIN_FILAMENTDRYER_EDIT"],
+                "description": "Allows modifying filament dryer settings",
+                "default_groups": ["admin"]
+            }
+        ]
+def __plugin_load__():
+    global __plugin_implementation__
+    __plugin_implementation__ = FilamentDryerPlugin()
+
+    global __plugin_hooks__
+    __plugin_hooks__ = {
+        "octoprint.comm.protocol.gcode.queuing": __plugin_implementation__.hook_gcode_queuing,
+        "octoprint.events.register_custom_events": __plugin_implementation__.register_custom_events,
+        "octoprint.access.permissions": __plugin_implementation__.get_additional_permissions,
+        "octoprint.server.api.before_request": __plugin_implementation__._hook_octoprint_server_api_before_request,
+    }
+
