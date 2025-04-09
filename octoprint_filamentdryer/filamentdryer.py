@@ -1,7 +1,7 @@
 import octoprint.plugin
 import requests
 
-API_BASE = "http://localhost:8000"  # Modify if needed
+API_BASE = "http://10.0.0.26:8000"
 
 class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
                           octoprint.plugin.TemplatePlugin,

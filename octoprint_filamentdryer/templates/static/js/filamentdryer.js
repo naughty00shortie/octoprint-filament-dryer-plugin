@@ -13,18 +13,17 @@ $(function () {
         };
 
         self.fetchState = function () {
-            $.get("http://localhost:8000/system", function (data) {
+            $.get("http://10.0.0.26:8000/system", function (data) {
                 self.systemOn(data.system_on);
             });
         };
 
         self.fetchHistory = function () {
-            $.get("http://localhost:8000/history", function (data) {
+            $.get("http://10.0.0.26:8000/history", function (data) {
                 self.tempData.actual_temp = data.map(d => [d.timestamp * 1000, d.actual_temp]);
                 self.tempData.target_temp = data.map(d => [d.timestamp * 1000, d.target_temp]);
                 self.tempData.humidity = data.map(d => [d.timestamp * 1000, d.humidity]);
 
-                // Add to temp chart (if possible)
                 if (typeof tempGraph !== 'undefined') {
                     tempGraph.plot.getOptions().series.push(
                         {label: "Dryer Temp", color: "#ffa500", data: self.tempData.actual_temp},
