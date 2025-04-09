@@ -44,11 +44,8 @@ def params():
 
     package_data = {plugin_package: package_data_dirs(plugin_package, ['static', 'templates', 'translations'] + plugin_additional_data)}
     include_package_data = True
-
-
+    python_requires = '>=3.7'
     zip_safe = False
-
-
     install_requires = open("requirements.txt").read().split("\n")
 
     entry_points = {
