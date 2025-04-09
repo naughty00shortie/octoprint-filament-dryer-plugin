@@ -1,29 +1,19 @@
-<div class="form-group">
-    <label for="target_temp">Target Temperature (°C):</label>
-    <input id="target_temp" type="number" class="form-control" data-bind="value: target_temp">
-</div>
-
-<div class="form-group">
-    <label for="tolerance">Tolerance (°C):</label>
-    <input id="tolerance" type="number" class="form-control" data-bind="value: tolerance">
-</div>
-
-<div class="form-group">
-    <label for="fan_on_cmd">Fan ON Command:</label>
-    <input id="fan_on_cmd" type="text" class="form-control" data-bind="value: fan_on_cmd">
-</div>
-
-<div class="form-group">
-    <label for="fan_off_cmd">Fan OFF Command:</label>
-    <input id="fan_off_cmd" type="text" class="form-control" data-bind="value: fan_off_cmd">
-</div>
-
-<div class="form-group">
-    <label for="element_on_cmd">Element ON Command:</label>
-    <input id="element_on_cmd" type="text" class="form-control" data-bind="value: element_on_cmd">
-</div>
-
-<div class="form-group">
-    <label for="element_off_cmd">Element OFF Command:</label>
-    <input id="element_off_cmd" type="text" class="form-control" data-bind="value: element_off_cmd">
+<div class="section">
+  <h3>Dryer Settings</h3>
+  <div class="control-group">
+    <label>Fan Pin:</label>
+    <input type="number" data-bind="value: settings.settings.plugins.dryer_control.fan_pin" />
+  </div>
+  <div class="control-group">
+    <label>Heater Pin:</label>
+    <input type="number" data-bind="value: settings.settings.plugins.dryer_control.heater_pin" />
+  </div>
+  <div class="control-group">
+    <label>Target Temp:</label>
+    <input type="number" data-bind="value: settings.settings.plugins.dryer_control.target_temp" />
+  </div>
+  <div class="control-group">
+    <label>Tolerance:</label>
+    <input type="number" data-bind="value: settings.settings.plugins.dryer_control.tolerance" />
+  </div>
 </div>
