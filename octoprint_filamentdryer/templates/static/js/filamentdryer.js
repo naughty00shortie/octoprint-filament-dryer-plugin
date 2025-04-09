@@ -47,6 +47,6 @@ $(function () {
     OCTOPRINT_VIEWMODELS.push({
         construct: DryerControlViewModel,
         dependencies: ["settingsViewModel", "temperatureViewModel"],
-        elements: ["#navbar_plugin_dryer_control", "#tab_plugin_dryer_control"]
+        elements: ["#navbar_plugin_filamentdryer", "#tab_plugin_filamentdryer"]
     });
 });

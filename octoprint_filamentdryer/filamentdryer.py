@@ -12,7 +12,6 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
     def on_after_startup(self):
         self._logger.info("DryerControl Plugin started")
 
-    ##~~ SettingsPlugin mixin
     def get_settings_defaults(self):
         return {
             "fan_pin": 17,
@@ -40,11 +39,11 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             "js": ["js/filamentdryer.js"]
         }
 
-    ##~~ TemplatePlugin mixin
     def get_template_configs(self):
         return [
             dict(type="settings", custom_bindings=False),
-            dict(type="tab", name="Dryer Graph"),
+            dict(type="tab", name="Dryer Graph", custom_bindings=True),
+            dict(type="navbar", custom_bindings=True)
         ]
 
     ##~~ SimpleApiPlugin mixin
