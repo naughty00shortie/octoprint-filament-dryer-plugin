@@ -1,5 +1,6 @@
 $(function () {
     function DryerControlViewModel(parameters) {
+        const self = this;
 
         self.fan_pin = ko.observable();
         self.heater_pin = ko.observable();
@@ -7,7 +8,6 @@ $(function () {
         self.tolerance = ko.observable();
         self.saveStatus = ko.observable(false);
 
-        const self = this;
         self.systemOn = ko.observable(false);
         self.tempData = {
             actual_temp: [],
@@ -47,8 +47,6 @@ $(function () {
             });
         };
 
-        self.onBeforeBinding = self.loadSettings;
-
         self.toggleSystem = function () {
             OctoPrint.simpleApiCommand("dryer_control", "toggle");
         };
@@ -59,8 +57,6 @@ $(function () {
             });
         };
 
-        let chart;
-
         self.fetchHistory = function () {
             $.get("http://10.0.0.26:8000/history", function (data) {
                 const labels = data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString());
@@ -68,9 +64,9 @@ $(function () {
                 const targetData = data.map(d => d.target_temp);
                 const humidityData = data.map(d => d.humidity);
 
-                if (!chart) {
+                if (!window.chart) {
                     const ctx = document.getElementById("dryerChart").getContext("2d");
-                    chart = new Chart(ctx, {
+                    window.chart = new Chart(ctx, {
                         type: "line",
                         data: {
                             labels: labels,
@@ -99,22 +95,22 @@ $(function () {
                             responsive: true,
                             maintainAspectRatio: false,
                             scales: {
-                                y: {beginAtZero: true}
+                                y: { beginAtZero: true }
                             }
                         }
                     });
                 } else {
-                    chart.data.labels = labels;
-                    chart.data.datasets[0].data = tempData;
-                    chart.data.datasets[1].data = targetData;
-                    chart.data.datasets[2].data = humidityData;
-                    chart.update();
+                    window.chart.data.labels = labels;
+                    window.chart.data.datasets[0].data = tempData;
+                    window.chart.data.datasets[1].data = targetData;
+                    window.chart.data.datasets[2].data = humidityData;
+                    window.chart.update();
                 }
             });
         };
 
-
         self.onBeforeBinding = function () {
+            self.loadSettings();
             self.fetchState();
             setInterval(self.fetchState, 5000);
             setInterval(self.fetchHistory, 10000);
@@ -124,6 +120,10 @@ $(function () {
     OCTOPRINT_VIEWMODELS.push({
         construct: DryerControlViewModel,
         dependencies: ["settingsViewModel", "temperatureViewModel"],
-        elements: ["#navbar_plugin_filamentdryer", "#tab_plugin_filamentdryer"]
+        elements: [
+            "#navbar_plugin_filamentdryer",
+            "#tab_plugin_filamentdryer",
+            "#settings_plugin_filamentdryer"
+        ]
     });
 });
