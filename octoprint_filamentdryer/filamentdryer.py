@@ -20,19 +20,6 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             "tolerance": 1.0
         }
 
-    def on_settings_save(self, data):
-        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
-        settings = {
-            "FAN_PIN": self._settings.get(["fan_pin"]),
-            "HEATER_PIN": self._settings.get(["heater_pin"]),
-            "TARGET_TEMP": self._settings.get(["target_temp"]),
-            "TOLERANCE": self._settings.get(["tolerance"])
-        }
-        try:
-            requests.post(f"{API_BASE}/settings", json=settings)
-        except requests.RequestException as e:
-            self._logger.error(f"Error updating dryer settings: {e}")
-
     ##~~ AssetPlugin mixin
     def get_assets(self):
         return {
@@ -41,12 +28,11 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
 
     def get_template_configs(self):
         return [
-            dict(type="settings", custom_bindings=False),
+            dict(type="settings", custom_bindings=True),
             dict(type="tab", name="Dryer Graph", custom_bindings=True),
             dict(type="navbar", custom_bindings=True)
         ]
 
-    ##~~ SimpleApiPlugin mixin
     def get_api_commands(self):
         return dict(toggle=[])
 
