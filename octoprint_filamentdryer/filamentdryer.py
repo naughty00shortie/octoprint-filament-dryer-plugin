@@ -22,7 +22,7 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
 
     def get_assets(self):
         return {
-            "js": ["js/filamentdryer.js","https://cdn.jsdelivr.net/npm/chart.js"]
+            "js": ["js/filamentdryer.js"]
         }
 
     def get_template_configs(self):
