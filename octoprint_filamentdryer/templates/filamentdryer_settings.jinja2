@@ -1,19 +1,28 @@
 <div class="section">
   <h3>Filament Dryer Settings</h3>
+
   <div class="control-group">
     <label>Fan Pin</label>
-    <input type="number" data-bind="value: fan_pin">
+    <input type="number" class="input-mini" data-bind="value: fan_pin">
   </div>
+
   <div class="control-group">
     <label>Heater Pin</label>
-    <input type="number" data-bind="value: heater_pin">
+    <input type="number" class="input-mini" data-bind="value: heater_pin">
   </div>
+
   <div class="control-group">
-    <label>Target Temp</label>
-    <input type="number" data-bind="value: target_temp">
+    <label>Target Temperature (&deg;C)</label>
+    <input type="number" class="input-mini" data-bind="value: target_temp">
   </div>
+
   <div class="control-group">
-    <label>Tolerance</label>
-    <input type="number" data-bind="value: tolerance">
+    <label>Tolerance (&deg;C)</label>
+    <input type="number" class="input-mini" data-bind="value: tolerance">
+  </div>
+
+  <div class="control-group">
+    <button class="btn btn-primary" data-bind="click: saveSettings">Save Settings</button>
+    <span data-bind="visible: saveStatus">✔️ Saved!</span>
   </div>
 </div>
