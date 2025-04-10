@@ -147,8 +147,6 @@ $(function () {
                             }
                         }
                     });
-                    chart.options.animation = false;
-                    chart.update('none');
 
                 } else {
                     chart.data.labels = labels;
