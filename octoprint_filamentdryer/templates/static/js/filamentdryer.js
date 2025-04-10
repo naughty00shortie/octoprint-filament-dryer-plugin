@@ -1,5 +1,11 @@
 $(function () {
     function DryerControlViewModel(parameters) {
+
+        self.fan_pin = self.settingsViewModel.settings.plugins.filamentdryer.fan_pin;
+        self.heater_pin = self.settingsViewModel.settings.plugins.filamentdryer.heater_pin;
+        self.target_temp = self.settingsViewModel.settings.plugins.filamentdryer.target_temp;
+        self.tolerance = self.settingsViewModel.settings.plugins.filamentdryer.tolerance;
+
         const self = this;
         self.systemOn = ko.observable(false);
         self.tempData = {
@@ -18,23 +24,60 @@ $(function () {
             });
         };
 
+        let chart;
+
         self.fetchHistory = function () {
             $.get("http://10.0.0.26:8000/history", function (data) {
-                self.tempData.actual_temp = data.map(d => [d.timestamp * 1000, d.actual_temp]);
-                self.tempData.target_temp = data.map(d => [d.timestamp * 1000, d.target_temp]);
-                self.tempData.humidity = data.map(d => [d.timestamp * 1000, d.humidity]);
+                const labels = data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString());
+                const tempData = data.map(d => d.actual_temp);
+                const targetData = data.map(d => d.target_temp);
+                const humidityData = data.map(d => d.humidity);
 
-                if (typeof tempGraph !== 'undefined') {
-                    tempGraph.plot.getOptions().series.push(
-                        {label: "Dryer Temp", color: "#ffa500", data: self.tempData.actual_temp},
-                        {label: "Dryer Target", color: "#00ff00", data: self.tempData.target_temp},
-                        {label: "Dryer Humidity", color: "#3399ff", data: self.tempData.humidity}
-                    );
-                    tempGraph.plot.setupGrid();
-                    tempGraph.plot.draw();
+                if (!chart) {
+                    const ctx = document.getElementById("dryerChart").getContext("2d");
+                    chart = new Chart(ctx, {
+                        type: "line",
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: "Actual Temp",
+                                    borderColor: "orange",
+                                    data: tempData,
+                                    fill: false
+                                },
+                                {
+                                    label: "Target Temp",
+                                    borderColor: "green",
+                                    data: targetData,
+                                    fill: false
+                                },
+                                {
+                                    label: "Humidity",
+                                    borderColor: "blue",
+                                    data: humidityData,
+                                    fill: false
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {beginAtZero: true}
+                            }
+                        }
+                    });
+                } else {
+                    chart.data.labels = labels;
+                    chart.data.datasets[0].data = tempData;
+                    chart.data.datasets[1].data = targetData;
+                    chart.data.datasets[2].data = humidityData;
+                    chart.update();
                 }
             });
         };
+
 
         self.onBeforeBinding = function () {
             self.fetchState();
