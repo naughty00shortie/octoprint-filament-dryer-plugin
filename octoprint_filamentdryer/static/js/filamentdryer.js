@@ -3,8 +3,8 @@ $(function () {
         const self = this;
         self.onBeforeBinding = function () {
             self.loadSettings();
-            self.fetchState();
-            setInterval(self.fetchState, 5000);
+            // self.fetchState();
+            // setInterval(self.fetchState, 5000);
             // setInterval(self.fetchHistory, 10000);
         };
 
