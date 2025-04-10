@@ -20,7 +20,6 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
             "tolerance": 1.0
         }
 
-    ##~~ AssetPlugin mixin
     def get_assets(self):
         return {
             "js": ["js/filamentdryer.js"]
