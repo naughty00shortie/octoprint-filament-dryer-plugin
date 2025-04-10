@@ -104,19 +104,59 @@ $(function () {
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
+                            animation: false,
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: {
+                                        font: {
+                                            size: 14
+                                        }
+                                    }
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function (context) {
+                                            return `${context.dataset.label}: ${context.formattedValue}`;
+                                        }
+                                    }
+                                }
+                            },
                             scales: {
+                                x: {
+                                    ticks: {
+                                        maxTicksLimit: 10
+                                    }
+                                },
                                 y: {
-                                    beginAtZero: true
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Value'
+                                    }
+                                }
+                            },
+                            elements: {
+                                point: {
+                                    radius: 3,
+                                    hoverRadius: 5
+                                },
+                                line: {
+                                    tension: 0.3
                                 }
                             }
                         }
                     });
+                    chart.options.animation = false;
+                    chart.update('none');
+
                 } else {
                     chart.data.labels = labels;
                     chart.data.datasets[0].data = tempData;
                     chart.data.datasets[1].data = targetData;
                     chart.data.datasets[2].data = humidityData;
-                    chart.update();
+                    chart.update('none');
+
                 }
             });
         };
