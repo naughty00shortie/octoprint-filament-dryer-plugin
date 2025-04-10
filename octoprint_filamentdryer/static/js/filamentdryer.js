@@ -1,6 +1,13 @@
 $(function () {
     function DryerControlViewModel(parameters) {
         const self = this;
+        self.onBeforeBinding = function () {
+            self.loadSettings();
+            self.fetchState();
+            setInterval(self.fetchState, 5000);
+            // setInterval(self.fetchHistory, 10000);
+        };
+
 
         self.fan_pin = ko.observable();
         self.heater_pin = ko.observable();
@@ -47,15 +54,15 @@ $(function () {
             });
         };
 
-        self.toggleSystem = function () {
-            OctoPrint.simpleApiCommand("dryer_control", "toggle");
-        };
-
-        self.fetchState = function () {
-            $.get("http://10.0.0.26:8000/system", function (data) {
-                self.systemOn(data.system_on);
-            });
-        };
+        // self.toggleSystem = function () {
+        //     OctoPrint.simpleApiCommand("dryer_control", "toggle");
+        // };
+        //
+        // self.fetchState = function () {
+        //     $.get("http://10.0.0.26:8000/system", function (data) {
+        //         self.systemOn(data.system_on);
+        //     });
+        // };
     }
 
     OCTOPRINT_VIEWMODELS.push({
