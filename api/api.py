@@ -45,22 +45,14 @@ def sensor_loop():
     global system_on, heater_on
     while True:
         with lock:
-            if system_on:
-                try:
-                    temperature = dht_device.temperature
-                    humidity = dht_device.humidity
+            try:
+                temperature = dht_device.temperature
+                humidity = dht_device.humidity
 
-                    if temperature is not None and humidity is not None:
+                if temperature is not None and humidity is not None:
+                    if system_on:
                         target = SETTINGS["TARGET_TEMP"]
                         tolerance = SETTINGS["TOLERANCE"]
-
-                        history.append({
-                            "timestamp": time.time(),
-                            "target_temp": target,
-                            "actual_temp": temperature,
-                            "humidity": humidity
-                        })
-
 
                         if temperature < (target - tolerance):
                             lgpio.gpio_write(h, SETTINGS["HEATER_PIN"], 1)
@@ -68,11 +60,23 @@ def sensor_loop():
                         elif temperature > (target + tolerance):
                             lgpio.gpio_write(h, SETTINGS["HEATER_PIN"], 0)
                             heater_on = False
+                    else:
+                        target = 0.0
+                        lgpio.gpio_write(h, SETTINGS["HEATER_PIN"], 0)
+                        heater_on = False
 
-                except RuntimeError as err:
-                    print(f"Sensor error: {err}")
+                    history.append({
+                        "timestamp": time.time(),
+                        "target_temp": target,
+                        "actual_temp": temperature,
+                        "humidity": humidity
+                    })
+
+            except RuntimeError as err:
+                print(f"Sensor error: {err}")
 
         time.sleep(2)
+
 
 threading.Thread(target=sensor_loop, daemon=True).start()
 
@@ -97,11 +101,6 @@ def update_settings(new_settings: SettingsModel):
     with lock:
         for key, value in new_settings.dict().items():
             SETTINGS[key] = value
-
-        lgpio.gpio_write(h, SETTINGS["FAN_PIN"], 1)
-        lgpio.gpio_write(h, SETTINGS["HEATER_PIN"], 0)
-        fan_on = True
-        heater_on = False
 
     return { "status": "updated", "settings": SETTINGS }
 
