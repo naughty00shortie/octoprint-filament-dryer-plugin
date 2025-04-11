@@ -9,7 +9,8 @@ $(function () {
             setInterval(self.fetchHistory, 5000);
         };
 
-
+        self.fanOn = ko.observable(false);
+        self.heaterOn = ko.observable(false);
         self.fan_pin = ko.observable();
         self.heater_pin = ko.observable();
         self.target_temp = ko.observable();
@@ -75,8 +76,11 @@ $(function () {
         self.fetchState = function () {
             $.get("http://10.0.0.26:8000/system", function (data) {
                 self.systemOn(data.system_on);
+                self.fanOn(data.fan_on);
+                self.heaterOn(data.heater_on);
             });
         };
+
 
         let chart;
 
