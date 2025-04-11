@@ -56,8 +56,21 @@ $(function () {
         };
 
         self.toggleSystem = function () {
-            OctoPrint.simpleApiCommand("dryer_control", "toggle");
+            const newState = !self.systemOn();
+            $.ajax({
+                url: "http://10.0.0.26:8000/system",
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({on: newState}),
+                success: function () {
+                    self.systemOn(newState);
+                },
+                error: function () {
+                    alert("Failed to toggle system state.");
+                }
+            });
         };
+
 
         self.fetchState = function () {
             $.get("http://10.0.0.26:8000/system", function (data) {
@@ -83,19 +96,23 @@ $(function () {
                             datasets: [
                                 {
                                     label: "Actual Temp (°C)",
-                                    borderColor: "orange",
+                                    borderColor: "red",
+                                    backgroundColor: "rgba(255, 0, 0, 0.1)",
                                     data: tempData,
                                     fill: false
                                 },
                                 {
                                     label: "Target Temp (°C)",
-                                    borderColor: "green",
+                                    borderColor: "purple",
+                                    backgroundColor: "rgba(128, 0, 128, 0.1)",
                                     data: targetData,
+                                    borderDash: [5, 5],
                                     fill: false
                                 },
                                 {
                                     label: "Humidity (%)",
                                     borderColor: "blue",
+                                    backgroundColor: "rgba(0, 0, 255, 0.1)",
                                     data: humidityData,
                                     fill: false
                                 }
@@ -110,7 +127,7 @@ $(function () {
                                     position: 'top',
                                     labels: {
                                         font: {
-                                            size: 14
+                                            size: 13
                                         }
                                     }
                                 },
@@ -125,7 +142,12 @@ $(function () {
                             scales: {
                                 x: {
                                     ticks: {
-                                        maxTicksLimit: 10
+                                        callback: function (value, index, ticks) {
+                                            // Format time as HH:MM
+                                            const label = this.getLabelForValue(value);
+                                            return label.split(':').slice(0, 2).join(':'); // Remove seconds
+                                        },
+                                        maxTicksLimit: 6
                                     }
                                 },
                                 y: {
@@ -138,14 +160,15 @@ $(function () {
                             },
                             elements: {
                                 point: {
-                                    radius: 3,
-                                    hoverRadius: 5
+                                    radius: 2,
+                                    hoverRadius: 4
                                 },
                                 line: {
-                                    tension: 0.3
+                                    tension: 0.25
                                 }
                             }
                         }
+
                     });
                     chart.options.animation = false;
                     chart.update('none');
