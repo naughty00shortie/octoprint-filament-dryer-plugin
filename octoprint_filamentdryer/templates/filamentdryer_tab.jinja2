@@ -19,18 +19,6 @@
     <span style="margin-left: 15px;">Heater: <strong data-bind="text: heaterOn() ? 'On' : 'Off'"></strong></span>
 </div>
 
-
-
-<div class="row-fluid">
-    <label style="margin-right: 10px;">Target Temperature (&deg;C):</label>
-    <div style="display: inline-flex; align-items: center; gap: 8px;">
-        <input style="margin-top: 10px;" type="number" class="input-mini" data-bind="value: target_temp">
-        <button class="btn btn-small" data-bind="click: saveSettings">Update Temp</button>
-        <span data-bind="visible: saveStatus">✔️ Saved!</span>
-    </div>
-</div>
-
-
     <hr>
 
     <h3>Temperature & Humidity History</h3>
