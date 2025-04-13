@@ -16,6 +16,9 @@ $(function () {
         self.target_temp = ko.observable();
         self.tolerance = ko.observable();
         self.saveStatus = ko.observable(false);
+        self.actualTempDisplay = ko.observable("--");
+        self.humidityDisplay = ko.observable("--");
+
 
         self.systemOn = ko.observable(false);
         self.tempData = {
@@ -86,7 +89,16 @@ $(function () {
 
         self.fetchHistory = function () {
             $.get("http://10.0.0.26:8000/history", function (data) {
-                const labels = data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString());
+                if (!data || data.length === 0) return;
+
+                const latest = data[data.length - 1];
+                self.actualTempDisplay(latest.actual_temp.toFixed(1));
+                self.humidityDisplay(latest.humidity.toFixed(1));
+
+                const labels = data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }));
                 const tempData = data.map(d => d.actual_temp);
                 const targetData = data.map(d => d.target_temp);
                 const humidityData = data.map(d => d.humidity);
@@ -101,92 +113,50 @@ $(function () {
                                 {
                                     label: "Actual Temp (°C)",
                                     borderColor: "red",
-                                    backgroundColor: "rgba(255, 0, 0, 0.1)",
                                     data: tempData,
                                     fill: false
                                 },
                                 {
                                     label: "Target Temp (°C)",
-                                    borderColor: "purple",
-                                    backgroundColor: "rgba(128, 0, 128, 0.1)",
+                                    borderColor: "#888",
                                     data: targetData,
-                                    borderDash: [5, 5],
                                     fill: false
                                 },
                                 {
                                     label: "Humidity (%)",
                                     borderColor: "blue",
-                                    backgroundColor: "rgba(0, 0, 255, 0.1)",
                                     data: humidityData,
                                     fill: false
                                 }
                             ]
                         },
                         options: {
+                            animation: false,
                             responsive: true,
                             maintainAspectRatio: false,
-                            animation: false,
-                            plugins: {
-                                legend: {
-                                    position: 'top',
-                                    labels: {
-                                        font: {
-                                            size: 13
-                                        }
-                                    }
-                                },
-                                tooltip: {
-                                    callbacks: {
-                                        label: function (context) {
-                                            return `${context.dataset.label}: ${context.formattedValue}`;
-                                        }
-                                    }
-                                }
-                            },
                             scales: {
                                 x: {
                                     ticks: {
-                                        callback: function (value, index, ticks) {
-                                            // Format time as HH:MM
-                                            const label = this.getLabelForValue(value);
-                                            return label.split(':').slice(0, 2).join(':'); // Remove seconds
-                                        },
-                                        maxTicksLimit: 6
+                                        maxTicksLimit: 8,
+                                        autoSkip: true
                                     }
                                 },
                                 y: {
-                                    beginAtZero: true,
-                                    title: {
-                                        display: true,
-                                        text: 'Value'
-                                    }
-                                }
-                            },
-                            elements: {
-                                point: {
-                                    radius: 2,
-                                    hoverRadius: 4
-                                },
-                                line: {
-                                    tension: 0.25
+                                    beginAtZero: true
                                 }
                             }
                         }
-
                     });
-                    chart.options.animation = false;
-                    chart.update('none');
-
                 } else {
                     chart.data.labels = labels;
                     chart.data.datasets[0].data = tempData;
                     chart.data.datasets[1].data = targetData;
                     chart.data.datasets[2].data = humidityData;
-                    chart.update('none');
-
+                    chart.update();
                 }
             });
         };
+
 
     }
 
