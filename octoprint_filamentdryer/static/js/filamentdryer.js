@@ -18,7 +18,8 @@ $(function () {
         self.heaterOn = ko.observable(false);
         self.actualTempDisplay = ko.observable("--");
         self.humidityDisplay = ko.observable("--");
-
+        self.connectionError = ko.observable(false);
+        self.lastErrorMessage = ko.observable("");
 
         self.systemOn = ko.observable(false);
 
@@ -35,19 +36,34 @@ $(function () {
                 data: JSON.stringify({on: newState}),
                 success: function () {
                     self.systemOn(newState);
+                    self.connectionError(false);
                 },
-                error: function () {
-                    alert("Failed to toggle system state.");
+                error: function (xhr, status, error) {
+                    console.error("Failed to toggle system:", status, error);
+                    self.connectionError(true);
+                    self.lastErrorMessage("Cannot connect to dryer controller at " + self.getApiUrl() + ". Check API URL in settings.");
                 }
             });
         };
 
 
         self.fetchState = function () {
-            $.get(self.getApiUrl() + "/system", function (data) {
-                self.systemOn(data.system_on);
-                self.fanOn(data.fan_on);
-                self.heaterOn(data.heater_on);
+            $.ajax({
+                url: self.getApiUrl() + "/system",
+                method: "GET",
+                success: function (data) {
+                    self.systemOn(data.system_on);
+                    self.fanOn(data.fan_on);
+                    self.heaterOn(data.heater_on);
+                    self.connectionError(false);
+                },
+                error: function (xhr, status, error) {
+                    if (!self.connectionError()) {
+                        console.error("Failed to fetch state:", status, error);
+                        self.connectionError(true);
+                        self.lastErrorMessage("Lost connection to dryer controller.");
+                    }
+                }
             });
         };
 

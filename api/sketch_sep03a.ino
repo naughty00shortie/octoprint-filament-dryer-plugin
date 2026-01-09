@@ -153,7 +153,21 @@ void controlLoop() {
 
 /* ===================== API ====================== */
 
+// Add CORS headers to allow browser access from OctoPrint
+void addCorsHeaders() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+// Handle OPTIONS preflight requests
+void handleOptions() {
+  addCorsHeaders();
+  server.send(200, "text/plain", "");
+}
+
 void handleRoot() {
+  addCorsHeaders();
   String html;
   html += "<!DOCTYPE html><html><head>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
@@ -245,6 +259,7 @@ void handleRoot() {
 
 
 void handleSystem() {
+  addCorsHeaders();
   if (server.method() == HTTP_POST) {
     StaticJsonDocument<200> doc;
     DeserializationError err = deserializeJson(doc, server.arg("plain"));
@@ -270,6 +285,7 @@ void handleSystem() {
 }
 
 void handleHistory() {
+  addCorsHeaders();
   unsigned long since = server.hasArg("since") ? server.arg("since").toInt() : 0;
 
   // Count matching entries first
@@ -278,8 +294,14 @@ void handleHistory() {
     if (history[i].ts > since) count++;
   }
 
-  // Calculate required buffer size: ~60 bytes per entry + overhead
-  size_t bufferSize = count * 70 + 200;
+  // Calculate required buffer size: each entry needs ~80 bytes
+  // JSON overhead per entry: field names + formatting + safety margin
+  size_t bufferSize = count * 90 + 500;
+
+  // Cap buffer size to prevent crashes (ESP8266 has limited RAM)
+  if (bufferSize > 20000) {
+    bufferSize = 20000;
+  }
 
   // Log memory usage
   Serial.print("History request - Entries: ");
@@ -289,13 +311,27 @@ void handleHistory() {
   Serial.print(", Free heap: ");
   Serial.println(ESP.getFreeHeap());
 
+  // Check if we have enough memory
+  if (ESP.getFreeHeap() < bufferSize + 2000) {
+    Serial.println("ERROR: Not enough memory for history!");
+    server.send(500, "application/json", "{\"error\":\"low_memory\"}");
+    return;
+  }
+
   // Use DynamicJsonDocument to allocate exact size needed
   DynamicJsonDocument doc(bufferSize);
   JsonArray arr = doc.to<JsonArray>();
 
+  int added = 0;
   for (int i = 0; i < HISTORY_SIZE; i++) {
     HistoryEntry &e = history[i];
     if (e.ts > since) {
+      // Stop if we're running out of space
+      if (added >= count || doc.overflowed()) {
+        Serial.println("WARNING: JSON buffer overflow, truncating history");
+        break;
+      }
+
       JsonObject o = arr.createNestedObject();
       o["ts"] = e.ts;
       o["temp"] = e.temp;
@@ -305,15 +341,23 @@ void handleHistory() {
       o["heater"] = e.heater;
       o["system"] = e.system;
       o["latched"] = e.latched;
+      added++;
     }
   }
 
   String out;
   serializeJson(doc, out);
+
+  Serial.print("Sent ");
+  Serial.print(added);
+  Serial.print(" entries, JSON size: ");
+  Serial.println(out.length());
+
   server.send(200, "application/json", out);
 }
 
 void handleSettings() {
+  addCorsHeaders();
   if (server.method() == HTTP_POST) {
     StaticJsonDocument<200> doc;
     DeserializationError err = deserializeJson(doc, server.arg("plain"));
@@ -435,10 +479,18 @@ void setup() {
 
   delay(2000);  // REQUIRED for DHT
   dht.begin();
+
+  // Register API endpoints
   server.on("/", HTTP_GET, handleRoot);
   server.on("/system", handleSystem);
   server.on("/history", HTTP_GET, handleHistory);
   server.on("/settings", handleSettings);
+
+  // Register OPTIONS handlers for CORS preflight
+  server.on("/system", HTTP_OPTIONS, handleOptions);
+  server.on("/history", HTTP_OPTIONS, handleOptions);
+  server.on("/settings", HTTP_OPTIONS, handleOptions);
+
   server.begin();
 
   Serial.println("HTTP server started");
