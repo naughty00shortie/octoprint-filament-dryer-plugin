@@ -8,6 +8,12 @@
 const char* ssid = "Girtjie";
 const char* password = "Karelkat1";
 
+// Static IP configuration (set to 0 to use DHCP)
+IPAddress staticIP(10, 0, 0, 50);    // ESP8266 static IP
+IPAddress gateway(10, 0, 0, 2);      // Router IP
+IPAddress subnet(255, 255, 255, 0);  // Subnet mask
+IPAddress dns(10, 0, 0, 2);          // DNS server
+
 /* ===================== OTA ====================== */
 const char* otaHostname = "filament-dryer";
 const char* otaPassword = "dryer123";
