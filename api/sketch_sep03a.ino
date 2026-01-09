@@ -269,7 +269,26 @@ void handleSystem() {
 
 void handleHistory() {
   unsigned long since = server.hasArg("since") ? server.arg("since").toInt() : 0;
-  StaticJsonDocument<4096> doc;
+
+  // Count matching entries first
+  int count = 0;
+  for (int i = 0; i < HISTORY_SIZE; i++) {
+    if (history[i].ts > since) count++;
+  }
+
+  // Calculate required buffer size: ~60 bytes per entry + overhead
+  size_t bufferSize = count * 70 + 200;
+
+  // Log memory usage
+  Serial.print("History request - Entries: ");
+  Serial.print(count);
+  Serial.print(", Buffer size: ");
+  Serial.print(bufferSize);
+  Serial.print(", Free heap: ");
+  Serial.println(ESP.getFreeHeap());
+
+  // Use DynamicJsonDocument to allocate exact size needed
+  DynamicJsonDocument doc(bufferSize);
   JsonArray arr = doc.to<JsonArray>();
 
   for (int i = 0; i < HISTORY_SIZE; i++) {
