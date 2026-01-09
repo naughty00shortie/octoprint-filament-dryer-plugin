@@ -57,7 +57,7 @@ $(function () {
 
         self.normalizeHistoryEntry = function(entry) {
             // Handle both Python API format (timestamp, actual_temp, target_temp, humidity)
-            // and Arduino API format (ts, temp, hum, fan, heater, system, latched)
+            // and Arduino API format (ts, temp, hum, target, fan, heater, system, latched)
             let timestamp, temp, targetTemp, humidity;
 
             if ('timestamp' in entry) {
@@ -71,7 +71,7 @@ $(function () {
                 // We'll use it as-is for comparison, but convert to wall time for display
                 timestamp = entry.ts;
                 temp = entry.temp;
-                targetTemp = 0; // Arduino doesn't include target in history yet
+                targetTemp = entry.target || 0;
                 humidity = entry.hum;
             }
 
