@@ -2,18 +2,7 @@
     <h3>Filament Dryer Control</h3>
 
     <div class="row-fluid">
-        <label style="margin-right: 10px;">Target Temperature (&deg;C):</label>
-        <div style="display: inline-flex; align-items: flex-start; gap: 8px;">
-            <input type="number" class="input-mini" data-bind="value: target_temp" style="margin-bottom: 0;">
-            <button class="btn btn-small" data-bind="click: saveSettings" style="margin-bottom: 0; padding-top: 4px;">
-                Update Temp
-            </button>
-            <span data-bind="visible: saveStatus" style="margin-top: 4px;">✔️ Saved!</span>
-        </div>
-    </div>
-
-    <div class="row-fluid" style="margin-top: 10px;">
-        <button class="btn" data-bind="click: toggleSystem, css: {'btn-success': systemOn, 'btn-danger': !systemOn()}">
+        <button class="btn btn-large" data-bind="click: toggleSystem, css: {'btn-success': systemOn, 'btn-danger': !systemOn()}">
             <span data-bind="text: systemOn() ? 'Turn Off Dryer' : 'Turn On Dryer'"></span>
         </button>
 
