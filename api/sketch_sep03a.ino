@@ -163,7 +163,8 @@ void controlLoop() {
 void addCorsHeaders() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control");
+  server.sendHeader("Access-Control-Max-Age", "86400");
 }
 
 // Handle OPTIONS preflight requests
@@ -294,72 +295,50 @@ void handleHistory() {
   addCorsHeaders();
   unsigned long since = server.hasArg("since") ? server.arg("since").toInt() : 0;
 
-  // Count matching entries first
-  int count = 0;
-  for (int i = 0; i < HISTORY_SIZE; i++) {
-    if (history[i].ts > since) count++;
-  }
-
-  // Calculate required buffer size: each entry needs ~80 bytes
-  // JSON overhead per entry: field names + formatting + safety margin
-  size_t bufferSize = count * 90 + 500;
-
-  // Cap buffer size to prevent crashes (ESP8266 has limited RAM)
-  if (bufferSize > 20000) {
-    bufferSize = 20000;
-  }
-
-  // Log memory usage
-  Serial.print("History request - Entries: ");
-  Serial.print(count);
-  Serial.print(", Buffer size: ");
-  Serial.print(bufferSize);
-  Serial.print(", Free heap: ");
+  // Log memory before starting
+  Serial.print("History request - Free heap: ");
   Serial.println(ESP.getFreeHeap());
 
-  // Check if we have enough memory
-  if (ESP.getFreeHeap() < bufferSize + 2000) {
-    Serial.println("ERROR: Not enough memory for history!");
-    server.send(500, "application/json", "{\"error\":\"low_memory\"}");
-    return;
-  }
-
-  // Use DynamicJsonDocument to allocate exact size needed
-  DynamicJsonDocument doc(bufferSize);
-  JsonArray arr = doc.to<JsonArray>();
-
+  // Build JSON manually to avoid large heap allocations
+  String json = "[";
   int added = 0;
+
   for (int i = 0; i < HISTORY_SIZE; i++) {
     HistoryEntry &e = history[i];
     if (e.ts > since) {
-      // Stop if we're running out of space
-      if (added >= count || doc.overflowed()) {
-        Serial.println("WARNING: JSON buffer overflow, truncating history");
+      if (added > 0) json += ",";
+
+      // Manually construct JSON for this entry to avoid ArduinoJson overhead
+      json += "{";
+      json += "\"ts\":"; json += String(e.ts); json += ",";
+      json += "\"temp\":"; json += String(e.temp, 1); json += ",";
+      json += "\"hum\":"; json += String(e.hum, 1); json += ",";
+      json += "\"target\":"; json += String(e.target, 1); json += ",";
+      json += "\"fan\":"; json += e.fan ? "true" : "false"; json += ",";
+      json += "\"heater\":"; json += e.heater ? "true" : "false"; json += ",";
+      json += "\"system\":"; json += e.system ? "true" : "false"; json += ",";
+      json += "\"latched\":"; json += e.latched ? "true" : "false";
+      json += "}";
+
+      added++;
+
+      // Stop if JSON gets too large (prevent OOM)
+      if (json.length() > 15000) {
+        Serial.println("WARNING: History truncated due to size limit");
         break;
       }
-
-      JsonObject o = arr.createNestedObject();
-      o["ts"] = e.ts;
-      o["temp"] = e.temp;
-      o["hum"] = e.hum;
-      o["target"] = e.target;
-      o["fan"] = e.fan;
-      o["heater"] = e.heater;
-      o["system"] = e.system;
-      o["latched"] = e.latched;
-      added++;
     }
   }
-
-  String out;
-  serializeJson(doc, out);
+  json += "]";
 
   Serial.print("Sent ");
   Serial.print(added);
   Serial.print(" entries, JSON size: ");
-  Serial.println(out.length());
+  Serial.print(json.length());
+  Serial.print(" bytes, Free heap after: ");
+  Serial.println(ESP.getFreeHeap());
 
-  server.send(200, "application/json", out);
+  server.send(200, "application/json", json);
 }
 
 void handleSettings() {
