@@ -17,10 +17,24 @@ $(function () {
         };
 
         self.onBeforeBinding = function () {
+            self.loadSettings();
             self.fetchState();
             self.fetchHistory();
             setInterval(self.fetchState, 2000);
             setInterval(self.fetchHistory, 5000);
+        };
+
+        self.loadSettings = function () {
+            $.ajax({
+                url: self.getApiUrl() + "/settings",
+                method: "GET",
+                success: function (data) {
+                    self.targetTemp(data.TARGET_TEMP || 65);
+                },
+                error: function () {
+                    console.warn("Could not load settings from ESP");
+                }
+            });
         };
 
         self.fanOn = ko.observable(false);
@@ -29,6 +43,8 @@ $(function () {
         self.humidityDisplay = ko.observable("--");
         self.connectionError = ko.observable(false);
         self.lastErrorMessage = ko.observable("");
+        self.targetTemp = ko.observable(65);
+        self.saveStatus = ko.observable(false);
 
         self.systemOn = ko.observable(false);
 
@@ -51,6 +67,29 @@ $(function () {
                     console.error("Failed to toggle system:", status, error);
                     self.connectionError(true);
                     self.lastErrorMessage("Cannot connect to dryer controller at " + self.getApiUrl() + ". Check API URL in settings.");
+                }
+            });
+        };
+
+        self.saveTargetTemp = function () {
+            const settings = {
+                TARGET_TEMP: parseFloat(self.targetTemp())
+            };
+
+            $.ajax({
+                url: self.getApiUrl() + "/settings",
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify(settings),
+                success: function () {
+                    self.saveStatus(true);
+                    setTimeout(() => self.saveStatus(false), 2000);
+                    self.connectionError(false);
+                },
+                error: function (xhr, status, error) {
+                    console.error("Failed to save target temp:", status, error);
+                    self.connectionError(true);
+                    self.lastErrorMessage("Failed to save target temperature.");
                 }
             });
         };
