@@ -47,6 +47,7 @@ struct HistoryEntry {
   unsigned long ts;
   float temp;
   float hum;
+  float target;
   bool fan;
   bool heater;
   bool system;
@@ -66,6 +67,7 @@ void pushHistory(float t, float h) {
     millis(),
     t,
     h,
+    TARGET_TEMP,
     fanOn,
     heaterOn,
     systemOn,
@@ -298,6 +300,7 @@ void handleHistory() {
       o["ts"] = e.ts;
       o["temp"] = e.temp;
       o["hum"] = e.hum;
+      o["target"] = e.target;
       o["fan"] = e.fan;
       o["heater"] = e.heater;
       o["system"] = e.system;
