@@ -1,8 +1,12 @@
 <div id="tab_plugin_filamentdryer" class="plugin-tab-content">
     <h3>Filament Dryer Control</h3>
 
+    <div class="alert alert-error" data-bind="visible: connectionError" style="margin-bottom: 10px;">
+        <strong>Connection Error:</strong> <span data-bind="text: lastErrorMessage"></span>
+    </div>
+
     <div class="row-fluid">
-        <button class="btn btn-large" data-bind="click: toggleSystem, css: {'btn-success': systemOn, 'btn-danger': !systemOn()}">
+        <button class="btn btn-large" data-bind="click: toggleSystem, css: {'btn-success': systemOn, 'btn-danger': !systemOn()}, enable: !connectionError()">
             <span data-bind="text: systemOn() ? 'Turn Off Dryer' : 'Turn On Dryer'"></span>
         </button>
 
