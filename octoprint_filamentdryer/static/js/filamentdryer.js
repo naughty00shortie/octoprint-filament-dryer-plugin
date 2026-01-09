@@ -4,7 +4,16 @@ $(function () {
         self.settingsViewModel = parameters[0];
 
         self.getApiUrl = function() {
-            return self.settingsViewModel.settings.plugins.filamentdryer.api_url();
+            try {
+                const apiUrlObservable = self.settingsViewModel.settings.plugins.filamentdryer.api_url;
+                if (apiUrlObservable && typeof apiUrlObservable === 'function') {
+                    const url = apiUrlObservable();
+                    return url || "http://10.0.0.50";
+                }
+            } catch (e) {
+                console.warn("Could not get api_url from settings:", e);
+            }
+            return "http://10.0.0.50";  // Default if not configured
         };
 
         self.onBeforeBinding = function () {
