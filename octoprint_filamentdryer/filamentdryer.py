@@ -1,8 +1,6 @@
 import octoprint.plugin
 import requests
 
-API_BASE = "http://10.0.0.26:8000"
-
 class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
                           octoprint.plugin.TemplatePlugin,
                           octoprint.plugin.SettingsPlugin,
@@ -14,7 +12,7 @@ class FilamentDryerPlugin(octoprint.plugin.StartupPlugin,
 
     def get_settings_defaults(self):
         return {
-            "api_url": "http://10.0.0.26:8000",
+            "api_url": "http://10.0.0.50",
             "fan_pin": 17,
             "heater_pin": 27,
             "target_temp": 65.0,
