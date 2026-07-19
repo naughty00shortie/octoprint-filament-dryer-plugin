@@ -67,7 +67,7 @@ const unsigned long OVERRIDE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
 // to notice and do it by hand. Set well above RELIABILITY_WINDOW's ~50s
 // timescale so this never fires for ordinary transient noise, only for a
 // sensor that's been completely dead for a long stretch.
-const unsigned long SENSOR_DEAD_RESTART_MS = 8UL * 60UL * 1000UL;
+const unsigned long SENSOR_DEAD_RESTART_MS = 3UL * 60UL * 1000UL;
 
 /* ===================== State ==================== */
 bool systemOn = false;
