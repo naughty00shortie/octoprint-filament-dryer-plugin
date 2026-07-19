@@ -419,6 +419,49 @@ void handleHistory() {
   server.send(200, "application/json", json);
 }
 
+// Bypasses the DHT library to measure the raw protocol timing on DHT_PIN.
+// Every read has been coming back NaN since boot even with a retry, which
+// means either the sensor never answers the start signal at all (dead
+// sensor / no power / wrong pin / no pull-up) or it answers but the 40-bit
+// payload gets corrupted in transit (noise/interference) - this tells us
+// which, without needing physical/serial access to the device.
+void handleDhtDiag() {
+  addCorsHeaders();
+  StaticJsonDocument<300> doc;
+
+  pinMode(DHT_PIN, INPUT_PULLUP);
+  delay(5);
+  int idleLevel = digitalRead(DHT_PIN);
+
+  // DHT22 start sequence: host pulls the line low for >=1ms, then releases
+  // and lets the sensor's own pull-up bring it back high before the sensor
+  // responds with its ack pulses.
+  pinMode(DHT_PIN, OUTPUT);
+  digitalWrite(DHT_PIN, LOW);
+  delay(2);
+  pinMode(DHT_PIN, INPUT_PULLUP);
+
+  unsigned long ackLowUs = pulseIn(DHT_PIN, LOW, 200000);
+  unsigned long ackHighUs = pulseIn(DHT_PIN, HIGH, 200000);
+  unsigned long firstBitLowUs = pulseIn(DHT_PIN, LOW, 200000);
+  unsigned long firstBitHighUs = pulseIn(DHT_PIN, HIGH, 200000);
+
+  doc["dht_pin"] = DHT_PIN;
+  doc["idle_level"] = idleLevel;
+  doc["ack_low_us"] = ackLowUs;
+  doc["ack_high_us"] = ackHighUs;
+  doc["first_bit_low_us"] = firstBitLowUs;
+  doc["first_bit_high_us"] = firstBitHighUs;
+  doc["note"] = "idle_level should be 1; ack pulses ~75-85us each mean a sensor answered; 0 on any ack means no response was detected within 200ms";
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
+
+  // Hand the pin back to the DHT library's expected state.
+  dht.begin();
+}
+
 void handleTime() {
   addCorsHeaders();
   StaticJsonDocument<200> doc;
@@ -615,12 +658,14 @@ void setup() {
   server.on("/history", HTTP_GET, handleHistory);
   server.on("/settings", handleSettings);
   server.on("/time", HTTP_GET, handleTime);
+  server.on("/diag/dht", HTTP_GET, handleDhtDiag);
 
   // Register OPTIONS handlers for CORS preflight
   server.on("/system", HTTP_OPTIONS, handleOptions);
   server.on("/history", HTTP_OPTIONS, handleOptions);
   server.on("/settings", HTTP_OPTIONS, handleOptions);
   server.on("/time", HTTP_OPTIONS, handleOptions);
+  server.on("/diag/dht", HTTP_OPTIONS, handleOptions);
 
   server.begin();
 
