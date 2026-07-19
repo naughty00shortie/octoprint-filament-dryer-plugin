@@ -176,4 +176,4 @@ cython_debug/
 */octoprint_psucontrol/*
 
 # Local device secrets - never commit
-api/secrets.h
+api/sketch_sep03a/secrets.h
