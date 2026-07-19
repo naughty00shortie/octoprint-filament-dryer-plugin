@@ -159,6 +159,22 @@ $(function () {
             return { rawTs, timestamp, temp, targetTemp, humidity };
         };
 
+        // Reading can be null (sensor failure at that cycle) - display "--"
+        // instead of throwing on null.toFixed().
+        self.formatReading = function (v) {
+            return (v === null || v === undefined || isNaN(v)) ? "--" : v.toFixed(1);
+        };
+
+        // Consecutive fetchHistory polls that returned zero new entries.
+        // Used to detect a device reboot: after a reboot the ESP's ts
+        // resets near zero, so ?since=<our old high watermark> comes back
+        // empty forever (every fresh entry fails the ESP's own e.ts > since
+        // check) - there's nothing in an empty response to notice the
+        // reset from. If it stays empty for a suspicious number of polls,
+        // probe with since=0 to check whether the device's own oldest
+        // visible entry is now lower than what we're tracking.
+        self.emptyHistoryPolls = 0;
+
         self.fetchHistory = function () {
             // Build URL with since parameter for incremental updates
             let url = self.getApiUrl() + "/history";
@@ -166,104 +182,156 @@ $(function () {
                 url += "?since=" + self.lastTimestamp;
             }
 
-            $.get(url, function (data) {
-                if (!data || data.length === 0) {
-                    // No new data, but update display from cache if we have it
-                    if (self.historyCache.length > 0) {
-                        const latest = self.historyCache[self.historyCache.length - 1];
-                        self.actualTempDisplay(latest.temp.toFixed(1));
-                        self.humidityDisplay(latest.humidity.toFixed(1));
-                    }
-                    return;
-                }
-
-                // Normalize and append new entries
-                const normalizedEntries = data.map(self.normalizeHistoryEntry);
-                self.historyCache.push(...normalizedEntries);
-
-                // Trim cache to max size
-                if (self.historyCache.length > MAX_HISTORY_POINTS) {
-                    self.historyCache = self.historyCache.slice(-MAX_HISTORY_POINTS);
-                }
-
-                // Update lastTimestamp from the newest entry. Must stay in
-                // the device's own ts space (rawTs), not the wall-clock-
-                // converted display timestamp, since it's sent back as the
-                // ?since= filter and the ESP compares it against its own
-                // millis()-based ts.
-                if (normalizedEntries.length > 0) {
-                    self.lastTimestamp = normalizedEntries[normalizedEntries.length - 1].rawTs;
-                }
-
-                // Update current readings from latest entry
-                const latest = self.historyCache[self.historyCache.length - 1];
-                self.actualTempDisplay(latest.temp.toFixed(1));
-                self.humidityDisplay(latest.humidity.toFixed(1));
-
-                // Prepare chart data from cache
-                const labels = self.historyCache.map(d => {
-                    const date = new Date(d.timestamp);
-                    return date.toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
-                });
-                const tempData = self.historyCache.map(d => d.temp);
-                const targetData = self.historyCache.map(d => d.targetTemp);
-                const humidityData = self.historyCache.map(d => d.humidity);
-
-                if (!chart) {
-                    const ctx = document.getElementById("dryerChart").getContext("2d");
-                    chart = new Chart(ctx, {
-                        type: "line",
-                        data: {
-                            labels: labels,
-                            datasets: [
-                                {
-                                    label: "Actual Temp (°C)",
-                                    borderColor: "red",
-                                    data: tempData,
-                                    fill: false
-                                },
-                                {
-                                    label: "Target Temp (°C)",
-                                    borderColor: "#888",
-                                    data: targetData,
-                                    fill: false
-                                },
-                                {
-                                    label: "Humidity (%)",
-                                    borderColor: "blue",
-                                    data: humidityData,
-                                    fill: false
-                                }
-                            ]
-                        },
-                        options: {
-                            animation: false,
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                x: {
-                                    ticks: {
-                                        maxTicksLimit: 8,
-                                        autoSkip: true
-                                    }
-                                },
-                                y: {
-                                    beginAtZero: true
-                                }
-                            }
-                        }
-                    });
-                } else {
-                    chart.data.labels = labels;
-                    chart.data.datasets[0].data = tempData;
-                    chart.data.datasets[1].data = targetData;
-                    chart.data.datasets[2].data = humidityData;
-                    chart.update();
+            $.ajax({
+                url: url,
+                method: "GET",
+                dataType: "json",
+                timeout: 5000,
+                success: self.handleHistoryResponse,
+                error: function (xhr, status, error) {
+                    // Includes JSON parse failures (status "parsererror"),
+                    // not just network errors - a response containing a
+                    // malformed value would land here rather than silently
+                    // vanishing.
+                    console.error("fetchHistory failed:", status, error);
+                    self.maybeCheckForReboot();
                 }
             });
+        };
+
+        self.maybeCheckForReboot = function () {
+            self.emptyHistoryPolls++;
+            if (self.emptyHistoryPolls < 3 || self.lastTimestamp <= 0) {
+                return;
+            }
+            $.ajax({
+                url: self.getApiUrl() + "/history?since=0",
+                method: "GET",
+                dataType: "json",
+                timeout: 5000,
+                success: function (probeData) {
+                    if (!probeData || probeData.length === 0) {
+                        return;
+                    }
+                    // Read the raw ts directly rather than through
+                    // normalizeHistoryEntry - that function re-anchors
+                    // bootEpochOffsetMs as a side effect, which we only
+                    // want to happen once a reboot is actually confirmed,
+                    // not on every old entry this probe happens to see.
+                    const probeRawTs = ('timestamp' in probeData[0])
+                        ? probeData[0].timestamp * 1000
+                        : probeData[0].ts;
+                    if (probeRawTs < self.lastTimestamp) {
+                        console.warn("Device reboot detected (ts reset) - resyncing history");
+                        self.lastTimestamp = 0;
+                        self.bootEpochOffsetMs = null;
+                        self.lastRawTs = -1;
+                        self.emptyHistoryPolls = 0;
+                        self.handleHistoryResponse(probeData);
+                    }
+                }
+            });
+        };
+
+        self.handleHistoryResponse = function (data) {
+            if (!data || data.length === 0) {
+                // No new data, but update display from cache if we have it
+                self.maybeCheckForReboot();
+                if (self.historyCache.length > 0) {
+                    const latest = self.historyCache[self.historyCache.length - 1];
+                    self.actualTempDisplay(self.formatReading(latest.temp));
+                    self.humidityDisplay(self.formatReading(latest.humidity));
+                }
+                return;
+            }
+            self.emptyHistoryPolls = 0;
+
+            // Normalize and append new entries
+            const normalizedEntries = data.map(self.normalizeHistoryEntry);
+            self.historyCache.push(...normalizedEntries);
+
+            // Trim cache to max size
+            if (self.historyCache.length > MAX_HISTORY_POINTS) {
+                self.historyCache = self.historyCache.slice(-MAX_HISTORY_POINTS);
+            }
+
+            // Update lastTimestamp from the newest entry. Must stay in
+            // the device's own ts space (rawTs), not the wall-clock-
+            // converted display timestamp, since it's sent back as the
+            // ?since= filter and the ESP compares it against its own
+            // millis()-based ts.
+            if (normalizedEntries.length > 0) {
+                self.lastTimestamp = normalizedEntries[normalizedEntries.length - 1].rawTs;
+            }
+
+            // Update current readings from latest entry
+            const latest = self.historyCache[self.historyCache.length - 1];
+            self.actualTempDisplay(self.formatReading(latest.temp));
+            self.humidityDisplay(self.formatReading(latest.humidity));
+
+            // Prepare chart data from cache
+            const labels = self.historyCache.map(d => {
+                const date = new Date(d.timestamp);
+                return date.toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            });
+            const tempData = self.historyCache.map(d => d.temp);
+            const targetData = self.historyCache.map(d => d.targetTemp);
+            const humidityData = self.historyCache.map(d => d.humidity);
+
+            if (!chart) {
+                const ctx = document.getElementById("dryerChart").getContext("2d");
+                chart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: "Actual Temp (°C)",
+                                borderColor: "red",
+                                data: tempData,
+                                fill: false
+                            },
+                            {
+                                label: "Target Temp (°C)",
+                                borderColor: "#888",
+                                data: targetData,
+                                fill: false
+                            },
+                            {
+                                label: "Humidity (%)",
+                                borderColor: "blue",
+                                data: humidityData,
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        animation: false,
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                ticks: {
+                                    maxTicksLimit: 8,
+                                    autoSkip: true
+                                }
+                            },
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            } else {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = tempData;
+                chart.data.datasets[1].data = targetData;
+                chart.data.datasets[2].data = humidityData;
+                chart.update();
+            }
         };
 
 

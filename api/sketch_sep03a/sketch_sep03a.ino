@@ -420,11 +420,17 @@ void handleHistory() {
     if (e.ts > 0 && e.ts > since) {
       if (added > 0) json += ",";
 
-      // Manually construct JSON for this entry to avoid ArduinoJson overhead
+      // Manually construct JSON for this entry to avoid ArduinoJson overhead.
+      // NaN readings must serialize as JSON null, not a bare `nan` token -
+      // String(NAN, 1) produces the literal text "nan" unquoted, which is
+      // NOT valid JSON (RFC 8259 has no NaN literal). A client's JSON.parse
+      // throws on it, which silently poisons the *entire* array for
+      // whichever poll request happens to include one bad entry - not just
+      // that one reading.
       json += "{";
       json += "\"ts\":"; json += String(e.ts); json += ",";
-      json += "\"temp\":"; json += String(e.temp, 1); json += ",";
-      json += "\"hum\":"; json += String(e.hum, 1); json += ",";
+      json += "\"temp\":"; json += (isnan(e.temp) ? String("null") : String(e.temp, 1)); json += ",";
+      json += "\"hum\":"; json += (isnan(e.hum) ? String("null") : String(e.hum, 1)); json += ",";
       json += "\"target\":"; json += String(e.target, 1); json += ",";
       json += "\"fan\":"; json += e.fan ? "true" : "false"; json += ",";
       json += "\"heater\":"; json += e.heater ? "true" : "false"; json += ",";
