@@ -3,24 +3,28 @@
 #include <ArduinoOTA.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
+#include <time.h>
+#include <sys/time.h>
+#include "secrets.h"
 
 /* ===================== WiFi ===================== */
-const char* ssid = "REDACTED_SSID";
-const char* password = "REDACTED_WIFI_PASSWORD";
+// ssid / password / otaHostname / otaPassword now live in secrets.h (gitignored)
 
-// Static IP configuration (set to 0 to use DHCP)
+// Static IP configuration. Set all four octets of staticIP to 0 to use DHCP instead.
 IPAddress staticIP(10, 0, 0, 50);    // ESP8266 static IP
 IPAddress gateway(10, 0, 0, 2);      // Router IP
 IPAddress subnet(255, 255, 255, 0);  // Subnet mask
 IPAddress dns(10, 0, 0, 2);          // DNS server
 
-/* ===================== OTA ====================== */
-const char* otaHostname = "filament-dryer";
-const char* otaPassword = "REDACTED_OTA_PASSWORD";
+/* ===================== NTP ====================== */
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 7200;     // Cape Town, South Africa is UTC+2 (2 hours * 3600 seconds)
+const int daylightOffset_sec = 0;    // South Africa doesn't use daylight saving time
+bool timeInitialized = false;
 
 /* ===================== Pins ===================== */
-int FAN_PIN     = 16;   // GPIO16
-int HEATER_PIN  = 14;   // GPIO14
+int FAN_PIN     = 14;   // GPIO14
+int HEATER_PIN  = 16;   // GPIO16
 int DHT_PIN     = 4;    // GPIO4
 #define LED_PIN     2    // GPIO2 (blue LED, inverted)
 
@@ -37,6 +41,12 @@ const float OVERTEMP_CUTOFF = 75.0;
 
 const unsigned long MAX_HEATER_ON_MS = 10UL * 60UL * 1000UL;
 const int MAX_CONSEC_SENSOR_FAILS = 20;
+
+// DHT22 needs >=2000ms between reads; add margin so millis() jitter never
+// triggers a read before the sensor has refreshed (a common cause of
+// spurious "sensor_fail" readings).
+const unsigned long SENSOR_READ_INTERVAL_MS = 2500UL;
+const unsigned long WIFI_CHECK_INTERVAL_MS = 30UL * 1000UL;
 
 /* ===================== State ==================== */
 bool systemOn = false;
@@ -68,6 +78,20 @@ int historyIndex = 0;
 ESP8266WebServer server(80);
 
 /* ===================== Helpers ================== */
+unsigned long getCurrentTimestamp() {
+  return time(nullptr);
+}
+
+// DHT22 range is -40..80C / 0..100%RH. Anything outside that is a bad
+// read that didn't happen to come back as NaN (loose wiring / brownout
+// can produce garbage values instead of NaN).
+bool isValidReading(float t, float h) {
+  if (isnan(t) || isnan(h)) return false;
+  if (h < 0.0 || h > 100.0) return false;
+  if (t < -40.0 || t > 80.0) return false;
+  return true;
+}
+
 void pushHistory(float t, float h) {
   history[historyIndex] = {
     millis(),
@@ -85,11 +109,16 @@ void pushHistory(float t, float h) {
 void setFan(bool on) {
   fanOn = on;
   digitalWrite(FAN_PIN, on ? HIGH : LOW);
+  Serial.print("Fan ");
+  Serial.print(on ? "ON" : "OFF");
+  Serial.print(" - GPIO");
+  Serial.print(FAN_PIN);
+  Serial.print(" = ");
+  Serial.println(on ? "HIGH" : "LOW");
 }
 
 void setHeater(bool on) {
   if (on) {
-    setFan(true);
     if (!heaterOn) heaterOnSince = millis();
     heaterOn = true;
     digitalWrite(HEATER_PIN, HIGH);
@@ -111,47 +140,79 @@ void controlLoop() {
   float temp = dht.readTemperature();
   float hum  = dht.readHumidity();
 
-  if (isnan(temp) || isnan(hum)) {
-    sensorFailCount++;
+  // DHT22 occasionally glitches on a single read (timing-sensitive bit-bang
+  // protocol, easily disrupted by WiFi/OTA interrupts). Retry once before
+  // counting it as a real failure.
+  if (!isValidReading(temp, hum)) {
+    delay(50);
+    temp = dht.readTemperature();
+    hum  = dht.readHumidity();
+  }
+
+  // Handle system on/off first
+  if (!systemOn) {
+    // System is OFF - turn everything off
     setHeater(false);
-    if (systemOn) setFan(true);
+    setFan(false);
+    digitalWrite(LED_PIN, HIGH); // LED OFF (inverted)
+    pushHistory(temp, hum);
+    return;
+  }
+
+  // System is ON - fan should ALWAYS be on
+  setFan(true);
+  digitalWrite(LED_PIN, LOW); // LED ON (inverted)
+
+  // Check for sensor failures
+  if (!isValidReading(temp, hum)) {
+    sensorFailCount++;
+    setHeater(false);  // Turn off heater on sensor error
     lastError = "sensor_fail";
+    Serial.print("Sensor read failed (raw temp=");
+    Serial.print(temp);
+    Serial.print(", hum=");
+    Serial.print(hum);
+    Serial.print("), consecutive fails=");
+    Serial.println(sensorFailCount);
   } else {
     sensorFailCount = 0;
 
-    if (systemOn && !safetyLatched) {
+    // Only control heater if not safety latched
+    if (!safetyLatched) {
+      // Check for overtemp
       if (temp >= OVERTEMP_CUTOFF) {
         safetyLatched = true;
         lastError = "overtemp";
         setHeater(false);
-        setFan(true);
       } else {
+        // Normal temperature control with hysteresis
         if (temp < TARGET_TEMP - TOLERANCE) {
           setHeater(true);
         } else if (temp > TARGET_TEMP + TOLERANCE) {
           setHeater(false);
         }
+        // Note: Between (TARGET_TEMP - TOLERANCE) and (TARGET_TEMP + TOLERANCE),
+        // heater state doesn't change (hysteresis)
 
+        // Check heater watchdog timer
         if (heaterOn && (millis() - heaterOnSince > MAX_HEATER_ON_MS)) {
           safetyLatched = true;
           lastError = "heater_watchdog";
           setHeater(false);
-          setFan(true);
         }
       }
+    } else {
+      // Safety latched - keep heater off
+      setHeater(false);
     }
   }
 
+  // Check if too many consecutive sensor failures
   if (sensorFailCount >= MAX_CONSEC_SENSOR_FAILS) {
     safetyLatched = true;
     lastError = "sensor_lock";
     setHeater(false);
-    setFan(true);
-  }
-
-  if (!systemOn) {
-    setHeater(false);
-    setFan(false);
+    // Fan stays on since system is still on
   }
 
   pushHistory(temp, hum);
@@ -217,8 +278,8 @@ void handleRoot() {
   html += "<p>Returns current configuration.</p>";
 
   html += "<pre>{\n"
-          "  \"FAN_PIN\": 16,\n"
-          "  \"HEATER_PIN\": 14,\n"
+          "  \"FAN_PIN\": 14,\n"
+          "  \"HEATER_PIN\": 16,\n"
           "  \"DHT_PIN\": 4,\n"
           "  \"TARGET_TEMP\": 65.0,\n"
           "  \"TOLERANCE\": 1.5\n"
@@ -275,8 +336,20 @@ void handleSystem() {
       return;
     }
     bool on = doc["on"];
-    if (on) resetSafety();
     systemOn = on;
+
+    if (on) {
+      // System turning ON - clear safety and start fan immediately
+      resetSafety();
+      setFan(true);
+      digitalWrite(LED_PIN, LOW); // LED ON
+    } else {
+      // System turning OFF - stop everything immediately
+      setHeater(false);
+      setFan(false);
+      digitalWrite(LED_PIN, HIGH); // LED OFF
+    }
+
     server.send(200, "application/json", "{\"ok\":true}");
   } else {
     StaticJsonDocument<200> doc;
@@ -303,9 +376,14 @@ void handleHistory() {
   String json = "[";
   int added = 0;
 
+  // Iterate through circular buffer in chronological order
+  // Start from historyIndex (oldest entry) and wrap around
   for (int i = 0; i < HISTORY_SIZE; i++) {
-    HistoryEntry &e = history[i];
-    if (e.ts > since) {
+    int idx = (historyIndex + i) % HISTORY_SIZE;
+    HistoryEntry &e = history[idx];
+
+    // Skip uninitialized entries (ts == 0) and entries older than 'since'
+    if (e.ts > 0 && e.ts > since) {
       if (added > 0) json += ",";
 
       // Manually construct JSON for this entry to avoid ArduinoJson overhead
@@ -339,6 +417,29 @@ void handleHistory() {
   Serial.println(ESP.getFreeHeap());
 
   server.send(200, "application/json", json);
+}
+
+void handleTime() {
+  addCorsHeaders();
+  StaticJsonDocument<200> doc;
+
+  unsigned long currentTime = getCurrentTimestamp();
+
+  doc["timestamp"] = currentTime;
+  doc["time_initialized"] = timeInitialized;
+
+  // Format human-readable time
+  struct tm timeinfo;
+  time_t now = currentTime;
+  gmtime_r(&now, &timeinfo);
+
+  char timeStr[64];
+  strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  doc["datetime"] = timeStr;
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
 }
 
 void handleSettings() {
@@ -427,12 +528,30 @@ void setup() {
   delay(2000);
   Serial.println("\nBooting filament dryer");
 
+  // Initialize history array to prevent garbage values
+  for (int i = 0; i < HISTORY_SIZE; i++) {
+    history[i].ts = 0;
+    history[i].temp = 0.0;
+    history[i].hum = 0.0;
+    history[i].target = TARGET_TEMP;
+    history[i].fan = false;
+    history[i].heater = false;
+    history[i].system = false;
+    history[i].latched = false;
+  }
+
   pinMode(FAN_PIN, OUTPUT);
   pinMode(HEATER_PIN, OUTPUT);
   setFan(false);
   setHeater(false);
 
   WiFi.mode(WIFI_STA);
+
+  // Apply static IP only if one was actually configured (all-zero staticIP means "use DHCP").
+  if (staticIP[0] != 0 || staticIP[1] != 0 || staticIP[2] != 0 || staticIP[3] != 0) {
+    WiFi.config(staticIP, gateway, subnet, dns);
+  }
+
   WiFi.begin(ssid, password);
 
   unsigned long start = millis();
@@ -452,10 +571,35 @@ void setup() {
     Serial.print("ESP MAC address: ");
     Serial.println(WiFi.macAddress());
 
-    digitalWrite(LED_PIN, LOW); // LED ON
+    // Initialize NTP time synchronization
+    Serial.println("Initializing NTP time sync...");
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+    // Wait for time to be set (with timeout)
+    int timeoutCounter = 0;
+    while (time(nullptr) < 100000 && timeoutCounter < 20) {
+      Serial.print(".");
+      delay(500);
+      timeoutCounter++;
+    }
+
+    if (time(nullptr) > 100000) {
+      timeInitialized = true;
+      Serial.println("\nNTP time synchronized");
+
+      time_t now = time(nullptr);
+      struct tm timeinfo;
+      gmtime_r(&now, &timeinfo);
+      Serial.print("Current time (UTC): ");
+      Serial.println(asctime(&timeinfo));
+    } else {
+      Serial.println("\nNTP time sync failed - timestamps will be inaccurate");
+    }
+
+    digitalWrite(LED_PIN, HIGH); // LED OFF (inverted, will turn on when system starts)
   } else {
     Serial.println("\nWiFi FAILED");
-    digitalWrite(LED_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH); // LED OFF
   }
 
   ArduinoOTA.setHostname(otaHostname);
@@ -470,11 +614,13 @@ void setup() {
   server.on("/system", handleSystem);
   server.on("/history", HTTP_GET, handleHistory);
   server.on("/settings", handleSettings);
+  server.on("/time", HTTP_GET, handleTime);
 
   // Register OPTIONS handlers for CORS preflight
   server.on("/system", HTTP_OPTIONS, handleOptions);
   server.on("/history", HTTP_OPTIONS, handleOptions);
   server.on("/settings", HTTP_OPTIONS, handleOptions);
+  server.on("/time", HTTP_OPTIONS, handleOptions);
 
   server.begin();
 
@@ -487,9 +633,20 @@ void loop() {
   server.handleClient();
 
   static unsigned long lastControl = 0;
-  if (millis() - lastControl > 2000) {
+  if (millis() - lastControl > SENSOR_READ_INTERVAL_MS) {
     lastControl = millis();
     controlLoop();
+  }
+
+  // WiFi can silently drop out from under a long-running ESP8266; without
+  // this the API and OTA both go dark until a manual power cycle.
+  static unsigned long lastWifiCheck = 0;
+  if (millis() - lastWifiCheck > WIFI_CHECK_INTERVAL_MS) {
+    lastWifiCheck = millis();
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi disconnected, reconnecting...");
+      WiFi.reconnect();
+    }
   }
 
   yield();
