@@ -58,6 +58,17 @@ const unsigned long WIFI_CHECK_INTERVAL_MS = 30UL * 1000UL;
 // can't accidentally leave the dryer in manual mode indefinitely.
 const unsigned long OVERRIDE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
 
+// A brief dropout self-clears once good reads resume (see RELIABILITY_*
+// above), but observed in practice: sometimes the sensor doesn't just get
+// noisy, it goes fully and permanently silent (/diag/dht shows zero
+// response) until the device is power-cycled - a real restart is the only
+// thing that's actually fixed it, not more retries or waiting. If nothing
+// but a restart works, do that automatically instead of requiring someone
+// to notice and do it by hand. Set well above RELIABILITY_WINDOW's ~50s
+// timescale so this never fires for ordinary transient noise, only for a
+// sensor that's been completely dead for a long stretch.
+const unsigned long SENSOR_DEAD_RESTART_MS = 8UL * 60UL * 1000UL;
+
 /* ===================== State ==================== */
 bool systemOn = false;
 bool fanOn = false;
@@ -77,6 +88,35 @@ String lastError = "";
 bool recentReadFailed[RELIABILITY_WINDOW] = {false};
 int recentReadIndex = 0;
 int recentFailSum = 0;
+
+unsigned long lastGoodReadAt = 0;
+
+/* ===================== Self-restart recovery ===== */
+// ESP8266 RTC memory survives a software restart (ESP.restart()), unlike a
+// genuine power loss/power-on reset. Used so the sensor-dead auto-restart
+// above doesn't silently drop a dry cycle that was actively running - if
+// the dryer was on, it comes back on. A real power-on always starts
+// systemOn=false regardless (the existing safe default - nobody should
+// come back to a heater running unsupervised after arbitrary power
+// restoration), since the magic marker won't be present/valid in that case.
+struct RtcRecoveryData {
+  uint32_t magic;
+  uint32_t systemOnFlag;
+  float targetTemp;
+  float tolerance;
+};
+const uint32_t RTC_RECOVERY_MAGIC = 0xDEADBEEF;
+
+void saveRecoveryStateAndRestart() {
+  RtcRecoveryData data;
+  data.magic = RTC_RECOVERY_MAGIC;
+  data.systemOnFlag = systemOn ? 1 : 0;
+  data.targetTemp = TARGET_TEMP;
+  data.tolerance = TOLERANCE;
+  ESP.rtcUserMemoryWrite(0, (uint32_t*)&data, sizeof(data));
+  delay(100);  // let Serial/RTC write flush before reset
+  ESP.restart();
+}
 
 /* ===================== History ================== */
 struct HistoryEntry {
@@ -168,6 +208,17 @@ void controlLoop() {
     delay(50);
     temp = dht.readTemperature();
     hum  = dht.readHumidity();
+  }
+
+  // Track how long it's been since the sensor last produced a real
+  // reading, independent of systemOn/manualOverride - a fully dead sensor
+  // is a global condition, and restarting is the fix regardless of what
+  // the heater/fan happen to be doing when it's noticed.
+  if (isValidReading(temp, hum)) {
+    lastGoodReadAt = millis();
+  } else if (millis() - lastGoodReadAt > SENSOR_DEAD_RESTART_MS) {
+    Serial.println("No valid sensor reading in over 8 minutes - restarting");
+    saveRecoveryStateAndRestart();
   }
 
   // Hard overtemp cutoff applies unconditionally, even mid manual-override
@@ -426,6 +477,7 @@ void handleSystem() {
     doc["heater_on"] = heaterOn;
     doc["safety_latched"] = safetyLatched;
     doc["last_error"] = lastError;
+    doc["seconds_since_good_read"] = (millis() - lastGoodReadAt) / 1000;
     String out;
     serializeJson(doc, out);
     server.send(200, "application/json", out);
@@ -708,6 +760,26 @@ void setup() {
   delay(2000);
   Serial.println("\nBooting filament dryer");
 
+  // Restore systemOn (and settings) if this was our own sensor-dead
+  // auto-restart rather than a genuine power-on - see saveRecoveryStateAndRestart.
+  // A real power loss clears RTC memory too, so the magic check naturally
+  // fails and systemOn correctly stays at its safe default (false) then.
+  RtcRecoveryData recovered;
+  ESP.rtcUserMemoryRead(0, (uint32_t*)&recovered, sizeof(recovered));
+  if (recovered.magic == RTC_RECOVERY_MAGIC) {
+    systemOn = (recovered.systemOnFlag == 1);
+    if (recovered.targetTemp >= MIN_TARGET && recovered.targetTemp <= MAX_TARGET) {
+      TARGET_TEMP = recovered.targetTemp;
+    }
+    TOLERANCE = recovered.tolerance;
+    Serial.print("Recovered state from self-restart: systemOn=");
+    Serial.println(systemOn ? "true" : "false");
+
+    // Invalidate so a later genuine power-loss can't somehow reuse stale data.
+    RtcRecoveryData cleared = {0, 0, 0, 0};
+    ESP.rtcUserMemoryWrite(0, (uint32_t*)&cleared, sizeof(cleared));
+  }
+
   // Initialize history array to prevent garbage values
   for (int i = 0; i < HISTORY_SIZE; i++) {
     history[i].ts = 0;
@@ -763,6 +835,7 @@ void setup() {
 
   delay(2000);  // REQUIRED for DHT
   dht.begin();
+  lastGoodReadAt = millis();  // don't start the dead-sensor timer as if already stuck
 
   // Register API endpoints
   server.on("/", HTTP_GET, handleRoot);
