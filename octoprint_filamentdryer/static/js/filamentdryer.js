@@ -52,6 +52,14 @@ $(function () {
         self.historyCache = [];
         self.lastTimestamp = 0;
 
+        // The ESP only reports millis()-since-boot, not wall-clock time (it
+        // has no reliable clock of its own). We anchor that counter to the
+        // browser's real clock instead, since that's always accurate -
+        // recomputed whenever ts goes backwards, which means the device
+        // rebooted and its millis() counter reset near zero.
+        self.bootEpochOffsetMs = null;
+        self.lastRawTs = -1;
+
         self.toggleSystem = function () {
             const newState = !self.systemOn();
             $.ajax({
@@ -122,24 +130,33 @@ $(function () {
         self.normalizeHistoryEntry = function(entry) {
             // Handle both Python API format (timestamp, actual_temp, target_temp, humidity)
             // and Arduino API format (ts, temp, hum, target, fan, heater, system, latched)
-            let timestamp, temp, targetTemp, humidity;
+            let rawTs, timestamp, temp, targetTemp, humidity;
 
             if ('timestamp' in entry) {
-                // Python API format - timestamp is Unix time in seconds
-                timestamp = entry.timestamp * 1000;
+                // Python API format - timestamp is already real Unix time in seconds
+                rawTs = entry.timestamp * 1000;
+                timestamp = rawTs;
                 temp = entry.actual_temp;
                 targetTemp = entry.target_temp;
                 humidity = entry.humidity;
             } else if ('ts' in entry) {
-                // Arduino API format - ts is millis() since boot
-                // We'll use it as-is for comparison, but convert to wall time for display
-                timestamp = entry.ts;
+                // Arduino API format - ts is millis() since the ESP's last
+                // boot, not wall-clock time. Anchor it to the browser's
+                // clock so the chart shows real times instead of dates
+                // near the Unix epoch.
+                if (self.bootEpochOffsetMs === null || entry.ts < self.lastRawTs) {
+                    self.bootEpochOffsetMs = Date.now() - entry.ts;
+                }
+                self.lastRawTs = entry.ts;
+
+                rawTs = entry.ts;
+                timestamp = entry.ts + self.bootEpochOffsetMs;
                 temp = entry.temp;
                 targetTemp = entry.target || 0;
                 humidity = entry.hum;
             }
 
-            return { timestamp, temp, targetTemp, humidity };
+            return { rawTs, timestamp, temp, targetTemp, humidity };
         };
 
         self.fetchHistory = function () {
@@ -169,9 +186,13 @@ $(function () {
                     self.historyCache = self.historyCache.slice(-MAX_HISTORY_POINTS);
                 }
 
-                // Update lastTimestamp from the newest entry
+                // Update lastTimestamp from the newest entry. Must stay in
+                // the device's own ts space (rawTs), not the wall-clock-
+                // converted display timestamp, since it's sent back as the
+                // ?since= filter and the ESP compares it against its own
+                // millis()-based ts.
                 if (normalizedEntries.length > 0) {
-                    self.lastTimestamp = normalizedEntries[normalizedEntries.length - 1].timestamp;
+                    self.lastTimestamp = normalizedEntries[normalizedEntries.length - 1].rawTs;
                 }
 
                 // Update current readings from latest entry

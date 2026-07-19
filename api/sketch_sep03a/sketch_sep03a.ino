@@ -3,8 +3,6 @@
 #include <ArduinoOTA.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
-#include <time.h>
-#include <sys/time.h>
 #include "secrets.h"
 
 /* ===================== WiFi ===================== */
@@ -15,12 +13,6 @@ IPAddress staticIP(10, 0, 0, 50);    // ESP8266 static IP
 IPAddress gateway(10, 0, 0, 2);      // Router IP
 IPAddress subnet(255, 255, 255, 0);  // Subnet mask
 IPAddress dns(10, 0, 0, 2);          // DNS server
-
-/* ===================== NTP ====================== */
-const char* ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = 7200;     // Cape Town, South Africa is UTC+2 (2 hours * 3600 seconds)
-const int daylightOffset_sec = 0;    // South Africa doesn't use daylight saving time
-bool timeInitialized = false;
 
 /* ===================== Pins ===================== */
 int FAN_PIN     = 14;   // GPIO14
@@ -78,10 +70,6 @@ int historyIndex = 0;
 ESP8266WebServer server(80);
 
 /* ===================== Helpers ================== */
-unsigned long getCurrentTimestamp() {
-  return time(nullptr);
-}
-
 // DHT22 range is -40..80C / 0..100%RH. Anything outside that is a bad
 // read that didn't happen to come back as NaN (loose wiring / brownout
 // can produce garbage values instead of NaN).
@@ -421,38 +409,81 @@ void handleHistory() {
 
 // Bypasses the DHT library to measure the raw protocol timing on DHT_PIN.
 // Every read has been coming back NaN since boot even with a retry, which
-// means either the sensor never answers the start signal at all (dead
-// sensor / no power / wrong pin / no pull-up) or it answers but the 40-bit
-// payload gets corrupted in transit (noise/interference) - this tells us
-// which, without needing physical/serial access to the device.
+// rules out a transient glitch - either nothing is answering the start
+// signal at all (dead sensor / no power / wrong pin / no pull-up), or
+// something answers but the 40-bit payload gets corrupted partway through
+// (noise/interference/wiring). This decodes the full handshake twice so we
+// can see exactly where - if anywhere - it breaks down.
+//
+// Deliberately does NOT disable interrupts around the bit-bang read (unlike
+// the DHT library itself): if the sensor never responds, worst case here is
+// blocking ~40 bits x a few ms of timeout, and doing that with interrupts
+// off risks a WiFi-stack stall or watchdog reset. Coarse presence/absence
+// is the goal, not microsecond-perfect timing.
 void handleDhtDiag() {
   addCorsHeaders();
-  StaticJsonDocument<300> doc;
+  DynamicJsonDocument doc(2048);
+
+  // No pull-up at all: if this floats/reads LOW, there's no external
+  // pull-up resistor on the line (expected on a bare DHT22; most 3-pin
+  // breakout modules include one already).
+  pinMode(DHT_PIN, INPUT);
+  delay(10);
+  doc["floating_level_no_pullup"] = digitalRead(DHT_PIN);
 
   pinMode(DHT_PIN, INPUT_PULLUP);
   delay(5);
-  int idleLevel = digitalRead(DHT_PIN);
+  doc["idle_level_with_internal_pullup"] = digitalRead(DHT_PIN);
 
-  // DHT22 start sequence: host pulls the line low for >=1ms, then releases
-  // and lets the sensor's own pull-up bring it back high before the sensor
-  // responds with its ack pulses.
-  pinMode(DHT_PIN, OUTPUT);
-  digitalWrite(DHT_PIN, LOW);
-  delay(2);
-  pinMode(DHT_PIN, INPUT_PULLUP);
+  JsonArray attempts = doc.createNestedArray("attempts");
 
-  unsigned long ackLowUs = pulseIn(DHT_PIN, LOW, 200000);
-  unsigned long ackHighUs = pulseIn(DHT_PIN, HIGH, 200000);
-  unsigned long firstBitLowUs = pulseIn(DHT_PIN, LOW, 200000);
-  unsigned long firstBitHighUs = pulseIn(DHT_PIN, HIGH, 200000);
+  for (int attempt = 0; attempt < 2; attempt++) {
+    JsonObject a = attempts.createNestedObject();
 
-  doc["dht_pin"] = DHT_PIN;
-  doc["idle_level"] = idleLevel;
-  doc["ack_low_us"] = ackLowUs;
-  doc["ack_high_us"] = ackHighUs;
-  doc["first_bit_low_us"] = firstBitLowUs;
-  doc["first_bit_high_us"] = firstBitHighUs;
-  doc["note"] = "idle_level should be 1; ack pulses ~75-85us each mean a sensor answered; 0 on any ack means no response was detected within 200ms";
+    // DHT22 start sequence: host pulls the line low for >=1ms, then
+    // releases so the sensor can pull it low itself to acknowledge.
+    pinMode(DHT_PIN, OUTPUT);
+    digitalWrite(DHT_PIN, LOW);
+    delay(2);
+    pinMode(DHT_PIN, INPUT_PULLUP);
+
+    unsigned long ackLowUs = pulseIn(DHT_PIN, LOW, 50000);
+    unsigned long ackHighUs = pulseIn(DHT_PIN, HIGH, 50000);
+
+    uint8_t data[5] = {0, 0, 0, 0, 0};
+    int bitsRead = 0;
+    JsonArray firstBits = a.createNestedArray("first_bits_low_high_us");
+
+    for (int i = 0; i < 40; i++) {
+      unsigned long lowUs = pulseIn(DHT_PIN, LOW, 5000);
+      unsigned long highUs = pulseIn(DHT_PIN, HIGH, 5000);
+      if (lowUs == 0 || highUs == 0) break;  // no more signal - stop here
+      bitsRead++;
+      int bit = (highUs > 40) ? 1 : 0;  // ~26-28us => 0, ~70us => 1
+      data[i / 8] = (data[i / 8] << 1) | bit;
+      if (firstBits.size() < 8) {
+        JsonObject bt = firstBits.createNestedObject();
+        bt["low"] = lowUs;
+        bt["high"] = highUs;
+      }
+    }
+
+    bool checksumOk = (bitsRead == 40) && (uint8_t)(data[0] + data[1] + data[2] + data[3]) == data[4];
+
+    a["ack_low_us"] = ackLowUs;
+    a["ack_high_us"] = ackHighUs;
+    a["bits_read"] = bitsRead;
+    a["checksum_ok"] = checksumOk;
+    if (bitsRead == 40) {
+      char hexBuf[11];
+      snprintf(hexBuf, sizeof(hexBuf), "%02X%02X%02X%02X%02X", data[0], data[1], data[2], data[3], data[4]);
+      a["raw_bytes"] = hexBuf;
+    }
+
+    delay(2200);  // respect DHT22's minimum interval before the next attempt
+  }
+
+  doc["note"] = "bits_read should reach 40 with checksum_ok=true for a real reading; ack pulses near 0 or bits_read=0 across both attempts means nothing is answering the line at all";
 
   String out;
   serializeJson(doc, out);
@@ -460,29 +491,6 @@ void handleDhtDiag() {
 
   // Hand the pin back to the DHT library's expected state.
   dht.begin();
-}
-
-void handleTime() {
-  addCorsHeaders();
-  StaticJsonDocument<200> doc;
-
-  unsigned long currentTime = getCurrentTimestamp();
-
-  doc["timestamp"] = currentTime;
-  doc["time_initialized"] = timeInitialized;
-
-  // Format human-readable time
-  struct tm timeinfo;
-  time_t now = currentTime;
-  gmtime_r(&now, &timeinfo);
-
-  char timeStr[64];
-  strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  doc["datetime"] = timeStr;
-
-  String out;
-  serializeJson(doc, out);
-  server.send(200, "application/json", out);
 }
 
 void handleSettings() {
@@ -614,31 +622,6 @@ void setup() {
     Serial.print("ESP MAC address: ");
     Serial.println(WiFi.macAddress());
 
-    // Initialize NTP time synchronization
-    Serial.println("Initializing NTP time sync...");
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
-    // Wait for time to be set (with timeout)
-    int timeoutCounter = 0;
-    while (time(nullptr) < 100000 && timeoutCounter < 20) {
-      Serial.print(".");
-      delay(500);
-      timeoutCounter++;
-    }
-
-    if (time(nullptr) > 100000) {
-      timeInitialized = true;
-      Serial.println("\nNTP time synchronized");
-
-      time_t now = time(nullptr);
-      struct tm timeinfo;
-      gmtime_r(&now, &timeinfo);
-      Serial.print("Current time (UTC): ");
-      Serial.println(asctime(&timeinfo));
-    } else {
-      Serial.println("\nNTP time sync failed - timestamps will be inaccurate");
-    }
-
     digitalWrite(LED_PIN, HIGH); // LED OFF (inverted, will turn on when system starts)
   } else {
     Serial.println("\nWiFi FAILED");
@@ -657,14 +640,12 @@ void setup() {
   server.on("/system", handleSystem);
   server.on("/history", HTTP_GET, handleHistory);
   server.on("/settings", handleSettings);
-  server.on("/time", HTTP_GET, handleTime);
   server.on("/diag/dht", HTTP_GET, handleDhtDiag);
 
   // Register OPTIONS handlers for CORS preflight
   server.on("/system", HTTP_OPTIONS, handleOptions);
   server.on("/history", HTTP_OPTIONS, handleOptions);
   server.on("/settings", HTTP_OPTIONS, handleOptions);
-  server.on("/time", HTTP_OPTIONS, handleOptions);
   server.on("/diag/dht", HTTP_OPTIONS, handleOptions);
 
   server.begin();
