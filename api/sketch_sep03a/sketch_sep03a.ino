@@ -177,7 +177,9 @@ void controlLoop() {
   bool readOk = isValidReading(temp, hum);
 
   // Track reliability over a rolling window in addition to the consecutive
-  // counter below - see RELIABILITY_WINDOW comment for why both are needed.
+  // counter - a sensor that fails about half its reads (recovering just
+  // often enough to keep resetting the consecutive counter to zero) should
+  // still be treated as untrustworthy, not just one that misses 20 in a row.
   recentFailSum -= recentReadFailed[recentReadIndex] ? 1 : 0;
   recentReadFailed[recentReadIndex] = !readOk;
   recentFailSum += !readOk ? 1 : 0;
@@ -185,20 +187,39 @@ void controlLoop() {
 
   if (!readOk) {
     sensorFailCount++;
-    setHeater(false);  // Turn off heater on sensor error
-    lastError = "sensor_fail";
-    Serial.print("Sensor read failed (raw temp=");
-    Serial.print(temp);
-    Serial.print(", hum=");
-    Serial.print(hum);
-    Serial.print("), consecutive fails=");
-    Serial.print(sensorFailCount);
-    Serial.print(", recent fails in window=");
-    Serial.println(recentFailSum);
   } else {
     sensorFailCount = 0;
+  }
 
-    // Only control heater if not safety latched
+  // Whether the sensor can be trusted right now. Deliberately NOT a sticky
+  // latch (unlike overtemp/heater_watchdog below): once reads are reliable
+  // again this clears on its own and normal control resumes, since a sensor
+  // blip that's already over and gone doesn't need a human to intervene.
+  bool sensorUnreliable = (sensorFailCount >= MAX_CONSEC_SENSOR_FAILS) ||
+                          (recentFailSum >= RELIABILITY_FAIL_THRESHOLD);
+
+  if (!readOk || sensorUnreliable) {
+    setHeater(false);  // Don't act on a reading we can't trust
+    lastError = sensorUnreliable ? "sensor_unreliable" : "sensor_fail";
+    if (!readOk) {
+      Serial.print("Sensor read failed (raw temp=");
+      Serial.print(temp);
+      Serial.print(", hum=");
+      Serial.print(hum);
+      Serial.print("), consecutive fails=");
+      Serial.print(sensorFailCount);
+      Serial.print(", recent fails in window=");
+      Serial.println(recentFailSum);
+    }
+  } else {
+    // Sensor just came back AND the recent window has cooled down too -
+    // clear any lingering sensor-error status and resume normal control.
+    if (lastError == "sensor_fail" || lastError == "sensor_unreliable") {
+      lastError = "";
+    }
+
+    // Only control heater if not safety latched (overtemp/watchdog - these
+    // do require an explicit restart, unlike the sensor checks above)
     if (!safetyLatched) {
       // Check for overtemp
       if (temp >= OVERTEMP_CUTOFF) {
@@ -226,23 +247,6 @@ void controlLoop() {
       // Safety latched - keep heater off
       setHeater(false);
     }
-  }
-
-  // Check if the sensor has become unreliable: either a hard run of
-  // consecutive failures (a dead/disconnected sensor), or too many failures
-  // within the recent window even if interspersed with occasional good
-  // reads (a flaky sensor/connection). Either way, latch off and require
-  // an explicit system restart to clear - don't just let the heater keep
-  // cycling on and off against a sensor that can't be trusted.
-  if (sensorFailCount >= MAX_CONSEC_SENSOR_FAILS) {
-    safetyLatched = true;
-    lastError = "sensor_lock";
-    setHeater(false);
-    // Fan stays on since system is still on
-  } else if (recentFailSum >= RELIABILITY_FAIL_THRESHOLD) {
-    safetyLatched = true;
-    lastError = "sensor_unreliable";
-    setHeater(false);
   }
 
   pushHistory(temp, hum);
