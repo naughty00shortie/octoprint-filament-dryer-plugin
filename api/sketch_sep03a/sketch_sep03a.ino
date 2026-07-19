@@ -38,6 +38,15 @@ const float OVERTEMP_CUTOFF = 60.0;
 const unsigned long MAX_HEATER_ON_MS = 10UL * 60UL * 1000UL;
 const int MAX_CONSEC_SENSOR_FAILS = 20;
 
+// A sensor that fails intermittently - often enough to be unreliable, but
+// recovering just often enough to keep resetting the consecutive-failure
+// counter above - would otherwise never trip the safety latch. This tracks
+// failures over a rolling window instead: if at least half of the last 20
+// read cycles (~50s) failed, that counts as "erroring for too long" even
+// though none of them were 20-in-a-row.
+const int RELIABILITY_WINDOW = 20;
+const int RELIABILITY_FAIL_THRESHOLD = 10;
+
 // DHT22 needs >=2000ms between reads; add margin so millis() jitter never
 // triggers a read before the sensor has refreshed (a common cause of
 // spurious "sensor_fail" readings).
@@ -53,6 +62,10 @@ bool safetyLatched = false;
 unsigned long heaterOnSince = 0;
 int sensorFailCount = 0;
 String lastError = "";
+
+bool recentReadFailed[RELIABILITY_WINDOW] = {false};
+int recentReadIndex = 0;
+int recentFailSum = 0;
 
 /* ===================== History ================== */
 struct HistoryEntry {
@@ -125,6 +138,11 @@ void resetSafety() {
   safetyLatched = false;
   sensorFailCount = 0;
   lastError = "";
+  for (int i = 0; i < RELIABILITY_WINDOW; i++) {
+    recentReadFailed[i] = false;
+  }
+  recentReadIndex = 0;
+  recentFailSum = 0;
 }
 
 /* ===================== Control Loop ============== */
@@ -156,7 +174,16 @@ void controlLoop() {
   digitalWrite(LED_PIN, LOW); // LED ON (inverted)
 
   // Check for sensor failures
-  if (!isValidReading(temp, hum)) {
+  bool readOk = isValidReading(temp, hum);
+
+  // Track reliability over a rolling window in addition to the consecutive
+  // counter below - see RELIABILITY_WINDOW comment for why both are needed.
+  recentFailSum -= recentReadFailed[recentReadIndex] ? 1 : 0;
+  recentReadFailed[recentReadIndex] = !readOk;
+  recentFailSum += !readOk ? 1 : 0;
+  recentReadIndex = (recentReadIndex + 1) % RELIABILITY_WINDOW;
+
+  if (!readOk) {
     sensorFailCount++;
     setHeater(false);  // Turn off heater on sensor error
     lastError = "sensor_fail";
@@ -165,7 +192,9 @@ void controlLoop() {
     Serial.print(", hum=");
     Serial.print(hum);
     Serial.print("), consecutive fails=");
-    Serial.println(sensorFailCount);
+    Serial.print(sensorFailCount);
+    Serial.print(", recent fails in window=");
+    Serial.println(recentFailSum);
   } else {
     sensorFailCount = 0;
 
@@ -199,12 +228,21 @@ void controlLoop() {
     }
   }
 
-  // Check if too many consecutive sensor failures
+  // Check if the sensor has become unreliable: either a hard run of
+  // consecutive failures (a dead/disconnected sensor), or too many failures
+  // within the recent window even if interspersed with occasional good
+  // reads (a flaky sensor/connection). Either way, latch off and require
+  // an explicit system restart to clear - don't just let the heater keep
+  // cycling on and off against a sensor that can't be trusted.
   if (sensorFailCount >= MAX_CONSEC_SENSOR_FAILS) {
     safetyLatched = true;
     lastError = "sensor_lock";
     setHeater(false);
     // Fan stays on since system is still on
+  } else if (recentFailSum >= RELIABILITY_FAIL_THRESHOLD) {
+    safetyLatched = true;
+    lastError = "sensor_unreliable";
+    setHeater(false);
   }
 
   pushHistory(temp, hum);
