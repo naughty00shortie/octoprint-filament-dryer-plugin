@@ -24,12 +24,16 @@ int DHT_PIN     = 4;    // GPIO4
 DHT dht(DHT_PIN, DHTTYPE);
 
 /* ===================== Settings ================= */
-float TARGET_TEMP = 65.0;
+float TARGET_TEMP = 55.0;
 float TOLERANCE   = 1.5;
 
 const float MIN_TARGET = 25.0;
-const float MAX_TARGET = 75.0;
-const float OVERTEMP_CUTOFF = 75.0;
+// Hard user-mandated ceiling: actual temperature must never exceed 60C.
+// MAX_TARGET is kept below that so normal hysteresis (target + TOLERANCE)
+// can't itself approach 60, leaving OVERTEMP_CUTOFF as a real last-resort
+// backstop rather than the thing normal operation brushes up against.
+const float MAX_TARGET = 55.0;
+const float OVERTEMP_CUTOFF = 60.0;
 
 const unsigned long MAX_HEATER_ON_MS = 10UL * 60UL * 1000UL;
 const int MAX_CONSEC_SENSOR_FAILS = 20;
@@ -269,15 +273,15 @@ void handleRoot() {
           "  \"FAN_PIN\": 14,\n"
           "  \"HEATER_PIN\": 16,\n"
           "  \"DHT_PIN\": 4,\n"
-          "  \"TARGET_TEMP\": 65.0,\n"
+          "  \"TARGET_TEMP\": 55.0,\n"
           "  \"TOLERANCE\": 1.5\n"
           "}</pre>";
 
   html += "<p><b>POST</b> <code>/settings</code></p>";
-  html += "<p>Update configuration. Pin changes require system restart.</p>";
+  html += "<p>Update configuration. Pin changes require system restart. TARGET_TEMP is capped at 55C (hard 60C overtemp cutoff).</p>";
 
   html += "<pre>{\n"
-          "  \"TARGET_TEMP\": 70.0,\n"
+          "  \"TARGET_TEMP\": 50.0,\n"
           "  \"TOLERANCE\": 2.0\n"
           "}</pre>";
 
