@@ -53,11 +53,22 @@ const int RELIABILITY_FAIL_THRESHOLD = 10;
 const unsigned long SENSOR_READ_INTERVAL_MS = 2500UL;
 const unsigned long WIFI_CHECK_INTERVAL_MS = 30UL * 1000UL;
 
+// Safety net for the /diag/relay manual override below: auto-revert to
+// normal control if nobody's touched it in a while, so a debugging session
+// can't accidentally leave the dryer in manual mode indefinitely.
+const unsigned long OVERRIDE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
+
 /* ===================== State ==================== */
 bool systemOn = false;
 bool fanOn = false;
 bool heaterOn = false;
 bool safetyLatched = false;
+
+// Diagnostic-only: lets fan/heater be driven independently of the normal
+// control loop, to isolate whether sensor dropouts track the fan
+// specifically, the heater relay, or general power draw. See /diag/relay.
+bool manualOverride = false;
+unsigned long overrideLastSetAt = 0;
 
 unsigned long heaterOnSince = 0;
 int sensorFailCount = 0;
@@ -157,6 +168,29 @@ void controlLoop() {
     delay(50);
     temp = dht.readTemperature();
     hum  = dht.readHumidity();
+  }
+
+  // Hard overtemp cutoff applies unconditionally, even mid manual-override
+  // test - the 60C ceiling is non-negotiable regardless of what's being
+  // diagnosed.
+  if (isValidReading(temp, hum) && temp >= OVERTEMP_CUTOFF) {
+    setHeater(false);
+    safetyLatched = true;
+    lastError = "overtemp";
+    manualOverride = false;
+  }
+
+  if (manualOverride) {
+    if (millis() - overrideLastSetAt > OVERRIDE_TIMEOUT_MS) {
+      manualOverride = false;
+    } else {
+      // Diagnostic mode: fan/heater stay exactly as /diag/relay last set
+      // them - skip normal on/off and hysteresis control entirely so fan-
+      // only vs heater-only vs both can be tested in isolation. Still logs
+      // real readings so the results are comparable afterward.
+      pushHistory(temp, hum);
+      return;
+    }
   }
 
   // Handle system on/off first
@@ -545,6 +579,49 @@ void handleDhtDiag() {
   dht.begin();
 }
 
+// Manually drives the fan/heater relays independently of the normal control
+// loop, to isolate whether sensor dropouts track the fan specifically, the
+// heater relay, or general power draw - system_on currently energizes both
+// together, so field data alone can't tell them apart. POST {"override":
+// true, "fan": true/false, "heater": true/false} to test a combination;
+// POST {"override": false} to hand control back to normal operation.
+// Auto-reverts after OVERRIDE_TIMEOUT_MS regardless, and the hard overtemp
+// cutoff always applies even while active (see controlLoop).
+void handleDiagRelay() {
+  addCorsHeaders();
+  if (server.method() == HTTP_POST) {
+    StaticJsonDocument<200> doc;
+    DeserializationError err = deserializeJson(doc, server.arg("plain"));
+    if (err) {
+      server.send(400, "application/json", "{\"error\":\"bad_json\"}");
+      return;
+    }
+
+    if (doc.containsKey("override")) {
+      manualOverride = doc["override"];
+      overrideLastSetAt = millis();
+    }
+    if (manualOverride) {
+      if (doc.containsKey("fan")) {
+        setFan(doc["fan"]);
+      }
+      if (doc.containsKey("heater")) {
+        bool wantHeater = doc["heater"];
+        if (wantHeater) setFan(true);  // never run the heater without airflow
+        setHeater(wantHeater);
+      }
+    }
+  }
+
+  StaticJsonDocument<200> resp;
+  resp["override_active"] = manualOverride;
+  resp["fan_on"] = fanOn;
+  resp["heater_on"] = heaterOn;
+  String out;
+  serializeJson(resp, out);
+  server.send(200, "application/json", out);
+}
+
 void handleSettings() {
   addCorsHeaders();
   if (server.method() == HTTP_POST) {
@@ -693,12 +770,15 @@ void setup() {
   server.on("/history", HTTP_GET, handleHistory);
   server.on("/settings", handleSettings);
   server.on("/diag/dht", HTTP_GET, handleDhtDiag);
+  server.on("/diag/relay", HTTP_GET, handleDiagRelay);
+  server.on("/diag/relay", HTTP_POST, handleDiagRelay);
 
   // Register OPTIONS handlers for CORS preflight
   server.on("/system", HTTP_OPTIONS, handleOptions);
   server.on("/history", HTTP_OPTIONS, handleOptions);
   server.on("/settings", HTTP_OPTIONS, handleOptions);
   server.on("/diag/dht", HTTP_OPTIONS, handleOptions);
+  server.on("/diag/relay", HTTP_OPTIONS, handleOptions);
 
   server.begin();
 
